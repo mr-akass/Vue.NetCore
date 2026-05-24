@@ -2,6 +2,7 @@
 using Autofac.Extensions.DependencyInjection;
 using Dapper;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Internal;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,6 +12,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
+using System.Text;
 using VOL.Core.CacheManager;
 using VOL.Core.Configuration;
 using VOL.Core.Const;
@@ -29,12 +31,8 @@ namespace VOL.Core.Extensions
 {
     public static class AutofacContainerModuleExtension
     {
-        //  private static bool _isMysql = false;
-        public static IServiceCollection AddModule(this IServiceCollection services, ContainerBuilder builder, IConfiguration configuration)
+        public static IServiceCollection AddModule(this IServiceCollection services, IConfiguration configuration)
         {
-            //services.AddSession();
-            //services.AddMemoryCache();
-            //初始化配置文件
             AppSetting.Init(services, configuration);
             Type baseType = typeof(IDependency);
             var compilationLibrary = DependencyContext.Default
@@ -56,31 +54,43 @@ namespace VOL.Core.Extensions
                     Console.WriteLine(_compilation.Name + ex.Message);
                 }
             }
-            builder.RegisterAssemblyTypes(assemblyList.ToArray())
-             .Where(type => baseType.IsAssignableFrom(type) && !type.IsAbstract)
-             .AsSelf().AsImplementedInterfaces()
-             .InstancePerLifetimeScope();
-            builder.RegisterType<UserContext>().InstancePerLifetimeScope();
-            builder.RegisterType<ActionObserver>().InstancePerLifetimeScope();
-            //model校验结果
-            builder.RegisterType<ObjectModelValidatorState>().InstancePerLifetimeScope();
-            string connectionString = DBServerProvider.GetConnectionString(null);
+            foreach (var _compilation in compilationLibrary)
+            {
+                var types = AssemblyLoadContext.Default.LoadFromAssemblyName(new AssemblyName(_compilation.Name)).GetTypes();
 
-            DapperParseGuidTypeHandler.InitParseGuid();
-            //启用缓存
+                var implementedInterfaces = types.Where(t => t.IsClass && !t.IsAbstract && t.GetInterfaces().Length > 0)
+                    .Where(type => baseType.IsAssignableFrom(type) && !type.IsAbstract)
+                    .Select(t => (serviceType: t.GetInterfaces(), implementationType: t))
+                    .ToList();
+
+                foreach (var (serviceType, implementationType) in implementedInterfaces)
+                {
+                    if (serviceType.Any(x => x == typeof(IDbContextDependencies)))
+                    {
+                        services.AddScoped(implementationType);
+                    }
+                    else
+                    {
+                        services.AddScoped(serviceType[0], implementationType);
+                    }
+
+                }
+            }
+            services.AddScoped<UserContext>();
+            services.AddScoped<ActionObserver>();
+            services.AddScoped<ObjectModelValidatorState>();
+            services.AddSingleton(typeof(ICacheService), AppSetting.UseRedis ? typeof(RedisCacheService) : typeof(MemoryCacheService));
             if (AppSetting.UseRedis)
             {
-                builder.RegisterType<RedisCacheService>().As<ICacheService>().SingleInstance();
+                services.AddSingleton<RedisCacheService>();
             }
-            else
+            if (DBType.Name == DbCurrentType.PgSql.ToString())
             {
-                builder.RegisterType<MemoryCacheService>().As<ICacheService>().SingleInstance();
+                AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+                AppContext.SetSwitch("Npgsql.DisableDateTimeInfinityConversions", true);
             }
-            //kafka注入
-            //if (AppSetting.Kafka.UseConsumer)
-            //    builder.RegisterType<KafkaConsumer<string, string>>().As<IKafkaConsumer<string, string>>().SingleInstance();
-            //if (AppSetting.Kafka.UseProducer)
-            //    builder.RegisterType<KafkaProducer<string, string>>().As<IKafkaProducer<string, string>>().SingleInstance();
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            DapperParseGuidTypeHandler.InitParseGuid();
             return services;
         }
 

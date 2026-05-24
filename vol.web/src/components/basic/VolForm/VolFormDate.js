@@ -6,6 +6,9 @@ export const getDateFormat = (item) => {
     if (item.type == 'month') {
         return 'YYYY-MM'
     }
+    if (item.type=='year') {
+         return 'YYYY'
+    }
     // if (item.type=='time') {
     //     return 'HH:mm:ss'
     // }

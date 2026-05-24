@@ -6,8 +6,9 @@ const hasSummary = (columns) => {
   });
 }
 
-export const initCellStyleSummary = (props, proxy, cellStyleColumns, summaryData, summaryIndex) => {
+export const initCellStyleSummary = (props, proxy, cellStyleColumns, summaryData, summaryIndex, summaryDataV2) => {
   summaryData.splice(0)
+  summaryDataV2.value = {}
   for (let key in summaryIndex) {
     delete summaryIndex[key]
   }
@@ -18,6 +19,15 @@ export const initCellStyleSummary = (props, proxy, cellStyleColumns, summaryData
     if (x.cellStyle) {
       cellStyleColumns[x.field] = x.cellStyle
     }
+
+    if (x.children != undefined) {
+      x.children.forEach((y) => {
+        if (!y.hidden && y.cellStyle) {
+          cellStyleColumns[y.field] = y.cellStyle
+        }
+      })
+    }
+
   })
 
   if (!hasSummary(props.columns)) {
@@ -36,17 +46,18 @@ export const initCellStyleSummary = (props, proxy, cellStyleColumns, summaryData
   })
 }
 
-export const initSummaryData = (props, tableData, summaryData, summaryIndex) => {
+export const initSummaryData = (props, tableData, summaryData, summaryIndex,summaryDataV2) => {
   props.columns.forEach((column) => {
     if (column.summary) {
-      initColumnSummaryData(column, tableData, summaryData, summaryIndex)
+      initColumnSummaryData(column, tableData, summaryData, summaryIndex,summaryDataV2||{})
     }
   })
 }
 
-export const initColumnSummaryData = (column, tableData, summaryData, summaryIndex) => {
+export const initColumnSummaryData = (column, tableData, summaryData, summaryIndex,summaryDataV2) => {
   // column列设置了summary属性的才计算值
   if (!column.summary) {
+    // summaryData.splice(0)
     return;
   }
   let sum = 0
@@ -69,11 +80,13 @@ export const initColumnSummaryData = (column, tableData, summaryData, summaryInd
     }
   }
   summaryData[summaryIndex[column.field]] = sum
+  summaryDataV2.value[column.field] = sum;
 }
 
 //加载后合计重新计算
-export const loadDataSummaries = (proxy, props, data, summaryData) => {
+export const loadDataSummaries = (proxy, props, data, summaryData,summaryDataV2) => {
   summaryData.splice(0)
+  summaryDataV2.value={};
   if (!hasSummary(props.columns)) {
     return;
   }
@@ -89,10 +102,10 @@ export const loadDataSummaries = (proxy, props, data, summaryData) => {
   props.columns.forEach((col) => {
     if (col.children && col.children.length) {
       col.children.forEach((item) => {
-        getColumnSummaries(item, data, summaryData)
+        getColumnSummaries(item, data, summaryData,summaryDataV2)
       })
     } else {
-      getColumnSummaries(col, data, summaryData)
+      getColumnSummaries(col, data, summaryData,summaryDataV2)
     }
   })
   if (summaryData.length > 0 && summaryData[0] == '') {
@@ -100,7 +113,7 @@ export const loadDataSummaries = (proxy, props, data, summaryData) => {
   }
 }
 
-export const getColumnSummaries = (col, data, summaryData) => {
+export const getColumnSummaries = (col, data, summaryData,summaryDataV2) => {
   if (!col.hidden) {
     if (data.summary && data.summary.hasOwnProperty(col.field)) {
       let sum = data.summary[col.field] * 1.0
@@ -112,6 +125,7 @@ export const getColumnSummaries = (col, data, summaryData) => {
         sum = parseFloat(sum).toString()
       }
       summaryData.push(sum)
+      summaryDataV2.value[col.field]=sum;
     } else {
       summaryData.push('')
     }

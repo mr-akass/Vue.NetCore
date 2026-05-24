@@ -1,10 +1,7 @@
 <template>
   <vol-loading v-if="!permissionInited" center></vol-loading>
-  <div
-    id="vol-container"
-    :class="['vol-theme-' + theme, layoutIsLeft() ? 'vol-layout-left' : '']"
-    v-if="permissionInited"
-  >
+  <div id="vol-container" :class="['vol-theme-' + theme, layoutIsLeft() ? 'vol-layout-left' : '']"
+    v-if="permissionInited">
     <div class="vol-aside" :style="{ width: (isCollapse ? 63 : 200) + 'px' }">
       <div class="header">
         <div class="vol-aside-project-name">
@@ -15,14 +12,8 @@
       </div>
       <div class="vol-menu">
         <el-scrollbar style="height: 100%; flex: 1;border-right:0;">
-          <VolMenu
-            :currentMenuId="currentMenuId"
-            :on-select="onSelect"
-            :enable="true"
-            :open-select="false"
-            :isCollapse="isCollapse"
-            :list="menuData"
-          ></VolMenu>
+          <VolMenu :currentMenuId="currentMenuId" :on-select="onSelect" :enable="true" :open-select="false"
+            :isCollapse="isCollapse" :list="menuData"></VolMenu>
         </el-scrollbar>
       </div>
     </div>
@@ -31,8 +22,8 @@
         <!-- 这里可以放项目名称 -->
         <!-- <div class="project-name">xx管理平台</div> -->
         <div class="header-text">
-         
-          <div class="h-link" v-if="layout == 'top'">
+
+          <!-- <div class="h-link" v-if="layout == 'top'">
             <a
               :class="[navCurrentMenuId === item.id ? 'h-link-a-acitve' : '']"
               @click="menuDataClick(item, index)"
@@ -41,12 +32,44 @@
             >
               <i :class="item.icon"></i> <span> {{ $ts(item.name) }}</span>
             </a>
-          </div>
-          <div class="h-link">
+          </div> -->
+          <div class="header-text" :class="{ 'header-text--top': layout === 'top' }">
+            <div v-if="layout === 'top'" class="h-link h-link-top-nav" ref="topNavRowRef">
+              <a v-for="(item, index) in topNavVisibleList" :key="'nav-v-' + item.id + '-' + index" class="nav-top-link"
+                :class="[navCurrentMenuId === item.id ? 'h-link-a-acitve' : '']"
+                @click="menuDataClick(item, getNavTopIndex(item))">
+                <i :class="item.icon"></i> <span> {{ $ts(item.name) }}</span>
+              </a>
+              <el-dropdown v-if="topNavOverflowList.length" trigger="hover" placement="bottom"
+                class="h-link-top-nav-dropdown">
+                <a class="h-link-top-nav-more" :class="{ 'h-link-top-nav-more--active': navOverflowHasActive }">
+                  <span class="el-icon-more"> </span>
+                </a>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item v-for="(item, idx) in topNavOverflowList" :key="'nav-o-' + item.id + '-' + idx"
+                      @click="menuDataClick(item, getNavTopIndex(item))">
+                      <i :class="item.icon"></i>
+                      <span style="margin-left: 6px">{{ $ts(item.name) }}</span>
+                    </el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </div>
+             <div class="h-link">
             <a @click="linkClick(item)" v-for="(item, index) in links" :key="index">
               <i :class="item.icon"></i> <span> {{ item.text }}</span>
             </a>
           </div>
+          </div>
+          <!-- 与顶栏链接同结构，用于测量每项宽度（不可见） -->
+          <div v-if="layout === 'top'" ref="topNavMeasureRef" class="h-link-top-nav-measure" aria-hidden="true">
+            <a v-for="(item, index) in navMenuList" :key="'nav-m-' + item.id + '-' + index"
+              class="nav-top-link nav-measure-item">
+              <i :class="item.icon"></i> <span> {{ $ts(item.name) }}</span>
+            </a>
+          </div>
+         
         </div>
         <div class="header-info">
           <!-- <div class="h-link" style="margin-right: 10px">
@@ -56,21 +79,16 @@
             <vol-menu-filter :on-select="onSelect"></vol-menu-filter>
           </div>
           <div class="h-link h-link-icons">
-            <a
-              v-for="(item, index) in icons"
-              @click="linkClick(item)"
-              :key="index"
-              :class="item.icon"
-            ></a>
+            <a v-for="(item, index) in icons" @click="linkClick(item)" :key="index" :class="item.icon"></a>
             <!-- <a><i class="el-icon-message-solid"></i></a> -->
           </div>
-          
+
           <!--消息管理-->
           <div class="h-link">
             <message :list="messageList"></message>
             <!-- <a><i class="el-icon-message-solid"></i></a> -->
           </div>
-    
+
           <div class="user-header-info">
             <el-dropdown trigger="hover">
               <div class="user-header-content">
@@ -96,22 +114,10 @@
         </div>
       </div>
       <div class="vol-path">
-        <el-tabs
-          @tab-click="selectNav"
-          @tab-remove="removeNav"
-          type="border-card"
-          class="header-navigation"
-          v-model="selectId"
-          :strtch="false"
-        >
-          <el-tab-pane
-            v-for="(item, navIndex) in navigation"
-            type="card"
-            :name="navIndex + ''"
-            :closable="navIndex > 0"
-            :key="navIndex"
-            :label="$ts(item.name)"
-          >
+        <el-tabs @tab-click="selectNav" @tab-remove="removeNav" type="border-card" class="header-navigation"
+          v-model="selectId" :strtch="false">
+          <el-tab-pane v-for="(item, navIndex) in navigation" type="card" :name="navIndex + ''" :closable="navIndex > 0"
+            :key="navIndex" :label="$ts(item.name)">
             <span style="display: none">{{ navIndex }}</span>
           </el-tab-pane>
         </el-tabs>
@@ -119,23 +125,18 @@
         <div v-show="contextMenuVisible">
           <ul :style="{ left: menuLeft + 'px', top: menuTop + 'px' }" class="contextMenu">
             <li v-show="visibleItem.left">
-              <el-button link @click="navCloseTabs('left')"
-                ><i class="el-icon-back"></i>{{ $ts('关闭左边') }}</el-button
-              >
+              <el-button link @click="navCloseTabs('left')"><i class="el-icon-back"></i>{{ $ts('关闭左边') }}</el-button>
             </li>
             <li v-show="visibleItem.right">
               <el-button link @click="navCloseTabs('right')">
-                <i class="el-icon-right"></i>{{ $ts('关闭右边') }}</el-button
-              >
+                <i class="el-icon-right"></i>{{ $ts('关闭右边') }}</el-button>
             </li>
             <li v-show="visibleItem.other">
-              <el-button link @click="navCloseTabs('other')"
-                ><i class="el-icon-right"></i>{{ $ts('关闭其他') }}
+              <el-button link @click="navCloseTabs('other')"><i class="el-icon-right"></i>{{ $ts('关闭其他') }}
               </el-button>
             </li>
             <li>
-              <el-button link @click="navRefreshPage"
-                ><i class="el-icon-refresh"></i>{{ $ts('刷新页面') }}
+              <el-button link @click="navRefreshPage"><i class="el-icon-refresh"></i>{{ $ts('刷新页面') }}
               </el-button>
             </li>
           </ul>
@@ -147,13 +148,7 @@
         </el-scrollbar>
       </div>
     </div>
-    <el-drawer
-      :title="$ts('基础设置')"
-      size="360px"
-      v-model="drawer_model"
-      direction="rtl"
-      destroy-on-close
-    >
+    <el-drawer :title="$ts('基础设置')" size="360px" v-model="drawer_model" direction="rtl" destroy-on-close>
       <home-setting @layoutChange="layoutChange"></home-setting>
     </el-drawer>
   </div>
@@ -170,7 +165,7 @@ import Message from './index/Message.vue'
 import IndexDataConfig from './index/IndexDataConfig.js'
 import IndexTabs from './index/IndexTabs.js'
 import HomeSetting from './index/Setting.vue'
-import inintMenu from './index/IndexMethods.js'
+import inintMenu, { registerTopNav } from './index/IndexMethods.js'
 import IndexRouterView from './index/IndexRouterView'
 
 import { reactive, ref, watch, onMounted, onUnmounted, getCurrentInstance, computed } from 'vue'
@@ -202,9 +197,13 @@ const {
   visibleItem,
   links,
   navMenuList,
-  menuData
+  menuData,
+  topNavRowRef,
+  topNavMeasureRef,
+  topNavVisibleList,
+  topNavOverflowList,
 } = dataConfig
-const { navCloseTabs, open, close, selectNav, removeNav,navRefreshPage } = IndexTabs(proxy, dataConfig, router)
+const { navCloseTabs, open, close, selectNav, removeNav, navRefreshPage } = IndexTabs(proxy, dataConfig, router)
 
 navigation.push({ orderNo: '0', id: '1', name: '首页', path: '/home' })
 links.value.push(...[{
@@ -213,19 +212,19 @@ links.value.push(...[{
   id: -1,
   icon: 'el-icon-mobile',
   left: true
-},{
+}, {
   text: '框架文档',
   path: 'http://v3.volcore.xyz/',
   id: -1,
   icon: 'el-icon-folder-opened',
   left: true
-},{
+}, {
   text: '企业版本',
   path: 'http://pro.volcore.xyz/',
   id: -1,
   icon: 'el-icon-coin',
   left: true
-},{
+}, {
   text: '框架视频',
   path: 'https://www.cctalk.com/m/group/90268531',
   id: -1,
@@ -343,6 +342,8 @@ const menuDataClick = (mItem, index) => {
   menuData.splice(0)
   menuData.push(...navMenuList[index].children)
 }
+const { getNavTopIndex, navOverflowHasActive, mountTopNav, unmountTopNav } =
+  registerTopNav(dataConfig);
 
 layout.value = localStorage.getItem('vol-layout')
 if (!layout.value) {
@@ -376,9 +377,11 @@ onMounted(() => {
   interval = setInterval(() => {
     indexDate.value = proxy.base.getDate(true)
   }, 1000)
+  mountTopNav();
 })
 onUnmounted(() => {
-  clearInterval(interval)
+  clearInterval(interval);
+  unmountTopNav();
 })
 </script>
 <style>

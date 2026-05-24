@@ -1,5 +1,4 @@
-﻿// *Author：jxx
-// *Contact：283591387@qq.com
+﻿// *Email：283591387@qq.com
 // *代码由框架生成,任何更改都可能导致被代码生成器覆盖
 export default function(){
     const table = {
@@ -7,12 +6,16 @@ export default function(){
         footer: "Foots",
         cnName: '#cnName',
         name: '#TableName',
+        newTabEdit: {$false},
         url: "#url",
-        sortName: "#SortName"
+        sortName: "#SortName",
+        fixedSearch:{fixedSearch},
+        showFooterDetail:{#showFooterDetail},
+        quickQueryFields:'{#quickQueryFields}'
     };
     const tableName = table.name;
     const tableCNName = table.cnName;
-    const newTabEdit = false;
+    const newTabEdit = {$false};
     const key = table.key;
     const editFormFields = #editFormFileds;
     const editFormOptions = #editFormOptions;

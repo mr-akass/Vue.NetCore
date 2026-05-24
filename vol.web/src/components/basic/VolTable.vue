@@ -5,13 +5,13 @@
     :class="[
       textInline ? 'text-inline' : '',
       fxRight ? 'fx-right' : '',
-      smallCell ? 'small-table' : ''
+      smallCell ? 'small-table' : '',
     ]"
   >
     <template v-if="dragPosition">
       <div v-show="showDragMask" class="drag-mask"></div>
     </template>
-    <div class="el-drag" ref="dragRef" v-if="dragPosition == 'top'">+</div>
+    <!-- <div class="el-drag" ref="dragRef" v-if="dragPosition == 'top'">+</div> -->
     <!-- v-if="loading" -->
     <div class="mask" v-if="loading">
       <vol-loading></vol-loading>
@@ -31,6 +31,7 @@
       @selection-change="selectionChange"
       @row-dblclick="rowDbClick"
       @row-click="rowClick"
+      @headerDragend="headerDragend"
       @header-click="headerClick"
       :highlight-current-row="highlightCurrentRow"
       ref="table"
@@ -48,6 +49,7 @@
       :scrollbar-always-on="true"
       @expand-change="expandChange"
       :span-method="cellSpanMethod"
+      @scroll="scrollTable"
     >
       <el-table-column
         v-if="ck"
@@ -57,13 +59,18 @@
         :selectable="selectable"
         width="55"
       ></el-table-column>
+      <!-- type="index" -->
       <el-table-column
         v-if="columnIndex"
-        type="index"
         :fixed="fixed"
-        width="50"
+        width="55"
+        :align="'center'"
         :label="$ts('序号')"
-      ></el-table-column>
+      >
+        <template #default="scope">
+          {{ scope.$index + 1 + (paginations.page - 1) * paginations.size }}
+        </template>
+      </el-table-column>
       <!-- 2020.10.10移除table第一行强制排序 -->
       <el-table-column
         v-for="(column, cindex) in tableColumns"
@@ -72,10 +79,12 @@
         :min-width="column.width"
         :formatter="formatter"
         :fixed="column.fixed"
-        :key="(column.field || '') + cindex"
+        :key="column.field||('col-' + cindex)"
         :align="column.align"
         :sortable="column.sort ? 'custom' : false"
-        :show-overflow-tooltip="column.showOverflowTooltip"
+        :show-overflow-tooltip="
+         ( $global.table.showOverflowTooltip&&column.showOverflowTooltip!==false) || column.showOverflowTooltip
+        "
         :class-name="column.class"
         :filters="column.filterData ? getFilters(column) : undefined"
         :filter-method="column.filterData ? filterHandler : undefined"
@@ -90,7 +99,9 @@
             :render="column.renderHeader"
           ></table-render>
           <template v-else>
-            <span v-if="(column.require || column.required) && column.edit" class="column-required"
+            <span
+              v-if="(column.require || column.required) && column.edit"
+              class="column-required"
               >*</span
             ><span :style="column.titleStyle">{{ $ts(column.title) }}</span>
 
@@ -110,6 +121,7 @@
         <template #default="scope">
           <!-- 2022.01.08增加多表头，现在只支持常用功能渲染，不支持编辑功能(涉及到组件重写) -->
           <el-table-column
+          
             style="border: none"
             v-for="columnChildren in filterChildrenColumn(column.children)"
             :key="columnChildren.field || columnChildren.title"
@@ -133,12 +145,48 @@
                 v-else-if="columnChildren.formatter"
                 @click="
                   columnChildren.click &&
-                    columnChildren.click(scopeChildren.row, columnChildren, scopeChildren.$index)
+                    columnChildren.click(
+                      scopeChildren.row,
+                      columnChildren,
+                      scopeChildren.$index
+                    )
                 "
                 v-html="
-                  columnChildren.formatter(scopeChildren.row, columnChildren, scopeChildren.$index)
+                  columnChildren.formatter(
+                    scopeChildren.row,
+                    columnChildren,
+                    scopeChildren.$index
+                  )
                 "
               ></div>
+              <table-render
+                v-else-if="
+                  columnChildren.render &&
+                  typeof columnChildren.render == 'function'
+                "
+                :row="scopeChildren.row"
+                key="rd-01"
+                :index="scopeChildren.$index"
+                :column="columnChildren"
+                :render="columnChildren.render"
+                :editInfo="edit"
+              ></table-render>
+               <img
+                v-else-if="columnChildren.type == 'img'"
+                v-for="(file, imgIndex) in getFilePath(
+                  scopeChildren.row[columnChildren.field],
+                  columnChildren
+                )"
+                :key="imgIndex"
+                @error="handleImageError"
+                @click="viewImg(scopeChildren.row, columnChildren, file.path, $event, imgIndex)"
+                class="table-img"
+                :style="{
+                  height: (columnChildren.imgHeight || 40) + 'px',
+                  width: (columnChildren.imgWidth || 40) + 'px',
+                }"
+                :src="file.path + access_token"
+              />
               <div v-else-if="columnChildren.bind">
                 {{ formatter(scopeChildren.row, columnChildren, true) }}
               </div>
@@ -150,20 +198,10 @@
               </template>
             </template>
           </el-table-column>
-          <!-- 2020.06.18增加render渲染自定义内容 -->
-          <table-render
-            v-if="column.render && typeof column.render == 'function'"
-            :row="scope.row"
-            key="rd-01"
-            :index="scope.$index"
-            :column="column"
-            :render="column.render"
-          ></table-render>
           <!-- 启用双击编辑功能，带编辑功能的不会渲染下拉框文本背景颜色 -->
           <!-- @click="rowBeginEdit(scope.$index,cindex)" -->
-
           <template
-            v-else-if="
+            v-if="
               column.edit &&
               !column.readonly &&
               ['file', 'img', 'excel'].indexOf(column.edit.type) != -1
@@ -171,16 +209,26 @@
           >
             <div style="display: flex; align-items: center" @click.stop>
               <i
-                style="padding: 3px; margin-right: 10px; color: #8f9293; cursor: pointer"
+                style="
+                  padding: 3px;
+                  margin-right: 10px;
+                  color: #8f9293;
+                  cursor: pointer;
+                "
                 @click="showUpload(scope.row, column)"
                 class="el-icon-upload"
               ></i>
               <template v-if="column.edit.type == 'img'">
                 <img
-                  v-for="(file, imgIndex) in getFilePath(scope.row[column.field], column)"
+                  v-for="(file, imgIndex) in getFilePath(
+                    scope.row[column.field],
+                    column
+                  )"
                   :key="imgIndex"
                   @error="handleImageError"
-                  @click="viewImg(scope.row, column, file.path, $event, imgIndex)"
+                  @click="
+                    viewImg(scope.row, column, file.path, $event, imgIndex)
+                  "
                   class="table-img"
                   :src="file.path + access_token"
                 />
@@ -189,20 +237,24 @@
                 style="margin-right: 8px"
                 v-else
                 class="t-file"
-                v-for="(file, fIndex) in getFilePath(scope.row[column.field], column)"
+                v-for="(file, fIndex) in getFilePath(
+                  scope.row[column.field],
+                  column
+                )"
                 :key="fIndex"
-                @click="dowloadFile(file)"
+                @click="dowloadFile(file, column, fIndex, scope.row)"
                 >{{ file.name }}</a
               >
             </div>
           </template>
-          <!-- 2021.09.21增加编辑时对readonly属性判断 -->
+          <!-- 2021.09增加编辑时对readonly属性判断 -->
           <div
-             v-else-if="
+            v-else-if="
               column.edit &&
               !column.readonly &&
               (column.edit.keep || edit.rowIndex == scope.$index) &&
-              (!column.checkEdit || column.checkEdit(scope.row, column, scope.$index))
+              (!column.checkEdit ||
+                column.checkEdit(scope.row, column, scope.$index))
             "
             class="edit-el"
           >
@@ -214,12 +266,15 @@
                   size="default"
                   style="width: 100%"
                   :ref="column.field + scope.$index"
-                  v-if="['date', 'datetime', 'month'].indexOf(column.edit.type) != -1"
+                  v-if="
+                    ['date', 'datetime', 'month'].indexOf(column.edit.type) !=
+                    -1
+                  "
                   v-model="scope.row[column.field]"
                   @click.prevent
                   @change="
                     (val) => {
-                      dateChange(scope.row, column, val)
+                      dateChange(scope.row, column, val);
                     }
                   "
                   :type="column.edit.type"
@@ -230,6 +285,8 @@
                   @visible-change="dateVisibleChang"
                 >
                 </el-date-picker>
+                <!-- time字段：数据库字段要用varhcar类型
+             如果使用的是date/datetime类型,需要设置表单配置的字段属性edit.valueFormat='YYYY-MM-DD HH:mm' -->
                 <el-time-picker
                   clearable
                   size="default"
@@ -238,7 +295,8 @@
                   v-model="scope.row[column.field]"
                   @change="
                     (val) => {
-                      column.onChange && column.onChange(scope.row, column, val)
+                      column.onChange &&
+                        column.onChange(scope.row, column, val);
                     }
                   "
                   :placeholder="$ts(column.placeholder || column.title)"
@@ -260,9 +318,15 @@
                       '#90ee90',
                       '#00ced1',
                       '#1e90ff',
-                      '#c71585'
+                      '#c71585',
                     ]"
                     v-model="scope.row[column.field]"
+                    @change="
+                      (val) => {
+                        column.onChange &&
+                          column.onChange(scope.row, column, val);
+                      }
+                    "
                   />
                 </template>
                 <el-switch
@@ -274,7 +338,7 @@
                   :inactive-text="$ts(column.inactiveText)"
                   @change="
                     (val) => {
-                      switchChange(val, scope.row, column)
+                      switchChange(val, scope.row, column);
                     }
                   "
                   :active-value="
@@ -295,24 +359,33 @@
                 >
                 </el-switch>
 
-                <template v-else-if="['select', 'selectList'].indexOf(column.edit.type) != -1">
+                <template
+                  v-else-if="
+                    ['select', 'selectList'].indexOf(column.edit.type) != -1
+                  "
+                >
                   <el-select-v2
                     :ref="column.field + scope.$index"
                     style="width: 100%"
                     size="default"
+                    :props="{ label: 'value', value: 'key' }"
                     v-if="column.bind.data.length >= select2Count"
                     v-model="scope.row[column.field]"
-                    :filterable="column.filter === undefined ? true : column.filter"
+                    :filterable="
+                      column.filter === undefined ? true : column.filter
+                    "
                     :multiple="column.edit.type == 'select' ? false : true"
                     :placeholder="$ts(column.placeholder || column.title)"
                     :allow-create="column.autocomplete"
                     :options="column.bind.data"
-                    @change="column.onChange && column.onChange(scope.row, column)"
+                    @change="
+                      column.onChange && column.onChange(scope.row, column)
+                    "
                     clearable
                     :disabled="initColumnDisabled(scope.row, column)"
                   >
                     <template #default="{ item }">
-                      {{ item.label }}
+                      {{ item.label || item.value }}
                     </template>
                   </el-select-v2>
 
@@ -322,18 +395,21 @@
                     style="width: 100%"
                     v-else
                     v-model="scope.row[column.field]"
-                    :filterable="column.filter === undefined ? true : column.filter"
+                    :filterable="
+                      column.filter === undefined ? true : column.filter
+                    "
+                    :reserve-keyword="false"
                     :multiple="column.edit.type == 'select' ? false : true"
                     :placeholder="$ts(column.placeholder || column.title)"
                     :allow-create="column.autocomplete"
                     @change="
                       (val) => {
-                        selectChange(scope.row, column, val)
+                        selectChange(scope.row, column, val);
                       }
                     "
                     @clear="
                       (val) => {
-                        selectChange(scope.row, column, val, true)
+                        selectChange(scope.row, column, val, true);
                       }
                     "
                     clearable
@@ -353,19 +429,32 @@
                 <el-tree-select
                   :ref="column.field + scope.$index"
                   style="width: 100%"
-                  v-else-if="column.edit.type == 'treeSelect' || column.edit.type == 'cascader'"
+                  v-else-if="
+                    column.edit.type == 'treeSelect' ||
+                    column.edit.type == 'cascader'
+                  "
                   v-model="scope.row[column.field]"
                   :data="column.bind.data"
-                  :multiple="column.multiple === undefined ? true : column.multiple"
+                  :multiple="
+                    column.multiple === undefined ? true : column.multiple
+                  "
                   :render-after-expand="false"
                   :show-checkbox="true"
-                  :check-strictly="true"
+                  :check-strictly="
+                    column.checkCtrictly === undefined
+                      ? true
+                      : column.checkCtrictly
+                  "
                   check-on-click-node
                   node-key="key"
-                  @change="column.onChange && column.onChange(scope.row, column)"
+                  @change="
+                    column.onChange && column.onChange(scope.row, column)
+                  "
                   :props="{ label: 'label' }"
                 >
-                  <template #default="{ data, node }"> {{ $ts(data.label) }}</template>
+                  <template #default="{ data, node }">
+                    {{ $ts(data.label) }}</template
+                  >
                 </el-tree-select>
                 <el-input
                   :ref="column.field + scope.$index"
@@ -376,27 +465,32 @@
                   :disabled="initColumnDisabled(scope.row, column)"
                   :autosize="{
                     minRows: column.minRows || 2,
-                    maxRows: column.maxRows || 10
+                    maxRows: column.maxRows || 10,
                   }"
                 >
                 </el-input>
                 <el-input-number
                   :ref="column.field + scope.$index"
                   style="width: 100%"
-                  v-else-if="column.edit.type == 'number' || column.edit.type == 'decimal'"
+                  v-else-if="
+                    column.edit.type == 'number' ||
+                    column.edit.type == 'decimal'
+                  "
                   v-model="scope.row[column.field]"
-                  :precision="column.edit.type == 'number' ? 0 : column.precision"
+                  :precision="
+                    column.edit.type == 'number' ? 0 : column.precision
+                  "
                   :min="column.min"
                   :disabled="column.readonly || column.disabled"
                   :max="column.max"
                   controls-position="right"
                   @focus="onFocus(scope.row, column, $event)"
                   @blur="onBlur(scope.row, column, $event)"
-                  @change="inputKeypress(scope.row, column, $event)"
                   @keyup.delete="inputKeypress(scope.row, column, $event)"
+                  @change="inputKeypress(scope.row, column, $event)"
                   @keypress="
                     ($event) => {
-                      inputKeypress(scope.row, column, $event)
+                      inputKeypress(scope.row, column, $event);
                     }
                   "
                 />
@@ -424,7 +518,10 @@
                   @blur="onBlur(scope.row, column, $event)"
                 ></el-input>
               </div>
-              <div class="extra" v-if="column.extra && edit.rowIndex == scope.$index">
+              <div
+                class="extra"
+                v-if="column.extra && edit.rowIndex == scope.$index"
+              >
                 <a
                   :style="column.extra.style"
                   style="text-decoration: none"
@@ -436,6 +533,15 @@
               </div>
             </div>
           </div>
+          <table-render
+            v-else-if="column.render && typeof column.render == 'function'"
+            :row="scope.row"
+            key="rd-01"
+            :index="scope.$index"
+            :column="column"
+            :render="column.render"
+            :editInfo="edit"
+          ></table-render>
           <!--没有编辑功能的直接渲染标签-->
           <!-- v-text="scope.row[column.field]" -->
           <template v-else>
@@ -448,14 +554,17 @@
             ></a>
             <img
               v-else-if="column.type == 'img'"
-              v-for="(file, imgIndex) in getFilePath(scope.row[column.field], column)"
+              v-for="(file, imgIndex) in getFilePath(
+                scope.row[column.field],
+                column
+              )"
               :key="imgIndex"
               @error="handleImageError"
               @click="viewImg(scope.row, column, file.path, $event, imgIndex)"
               class="table-img"
               :style="{
                 height: (column.imgHeight || 40) + 'px',
-                width: (column.imgWidth || 40) + 'px'
+                width: (column.imgWidth || 40) + 'px',
               }"
               :src="file.path + access_token"
             />
@@ -463,16 +572,19 @@
               style="margin-right: 8px"
               v-else-if="column.type == 'file' || column.type == 'excel'"
               class="t-file"
-              v-for="(file, fIndex) in getFilePath(scope.row[column.field], column)"
+              v-for="(file, fIndex) in getFilePath(
+                scope.row[column.field],
+                column
+              )"
               :key="fIndex"
-              @click="dowloadFile(file)"
+              @click="dowloadFile(file, column, fIndex, scope.row)"
               >{{ file.name }}</a
             >
             <template v-else-if="column.type == 'date'">{{
               formatDate(scope.row, column)
             }}</template>
             <template v-else-if="column.type == 'month'">{{
-              (scope.row[column.field] || '').substr(0, 7)
+              (scope.row[column.field] || "").substr(0, 7)
             }}</template>
             <div
               v-else-if="column.formatter"
@@ -484,7 +596,9 @@
               v-else-if="column.bind && (column.normal || column.edit)"
               @click.stop="formatterClick(scope.row, column, $event)"
             >
-              <span :style="column.getStyle && column.getStyle(scope.row, column)">
+              <span
+                :style="column.getStyle && column.getStyle(scope.row, column)"
+              >
                 {{ formatter(scope.row, column, true) }}</span
               >
             </div>
@@ -497,22 +611,22 @@
             <div
               @click="
                 () => {
-                  column.click && formatterClick(scope.row, column)
+                  column.click && formatterClick(scope.row, column);
                 }
               "
               v-else-if="column.bind"
             >
-              <el-tag
-                v-if="
-                  useTag && column.type != 'cascader' && !base.isEmptyValue(scope.row[column.field])
-                "
+              <vol-tag 
+                v-if="useTag && column.type != 'cascader'"
                 class="cell-tag"
+                :class="[isEmptyTag(scope.row, column)]"
                 :type="getColor(scope.row, column)"
                 :effect="column.effect"
-                size="small"
-                >{{ formatter(scope.row, column, true) }}</el-tag
+                >{{ formatter(scope.row, column, true) }}</vol-tag
               >
-              <template v-else>{{ formatter(scope.row, column, true) }}</template>
+              <template v-else>{{
+                formatter(scope.row, column, true)
+              }}</template>
             </div>
 
             <template v-else>{{ formatter(scope.row, column, true) }}</template>
@@ -521,7 +635,11 @@
       </el-table-column>
     </el-table>
     <template v-if="!paginationHide">
-      <div class="block pagination" key="pagination-01">
+      <div
+        class="block pagination"
+        :class="[tableV2 ? 'v2-pagination' : '']"
+        key="pagination-01"
+      >
         <div>
           <slot name="pagination"></slot>
         </div>
@@ -540,7 +658,10 @@
         </div>
       </div>
     </template>
-    <div class="el-drag" ref="dragRef" v-if="dragPosition == 'bottom'">+</div>
+    <div class="resize-handle" ref="dragRef" v-if="dragPosition == 'bottom'">
+      <div></div>
+      <div></div>
+    </div>
     <vol-table-upload ref="uploadRef"></vol-table-upload>
     <vol-image-viewer ref="viewer"></vol-image-viewer>
   </div>
@@ -555,18 +676,18 @@ import {
   nextTick,
   onMounted,
   onUnmounted,
-  watch
-} from 'vue'
-import VolTableProps from './VolTable/VolTableProps.js'
-import TableRender from './VolTable/VolTableRender'
-
-import { initDataSource } from './VolTable/VolTableDicData.js'
+  watch,
+  watchEffect,
+} from "vue";
+import VolTableProps from "./VolTable/VolTableProps.js";
+import TableRender from "./VolTable/VolTableRender";
+import { initDataSource } from "./VolTable/VolTableDicData.js";
 import {
   initCellStyleSummary,
   initSummaryData,
   initColumnSummaryData,
-  loadDataSummaries
-} from './VolTable/VolTableSummary.js'
+  loadDataSummaries,
+} from "./VolTable/VolTableSummary.js";
 import {
   selectChange,
   switchChange,
@@ -575,11 +696,11 @@ import {
   selectionRowChange,
   expandTreeChange,
   onBlur,
-  onFocus
-} from './VolTable/VolTableEvent.js'
-import { getPath, previewImg } from './VolTable/VolTableFile.js'
-import { resetPage, loadData } from './VolTable/VolTableLoadData.js'
-import { getDateOptions, getDateFormat } from './VolTable/VolTableDate.js'
+  onFocus,
+} from "./VolTable/VolTableEvent.js";
+import { getPath, previewImg } from "./VolTable/VolTableFile.js";
+import { resetPage, loadData } from "./VolTable/VolTableLoadData.js";
+import { getDateOptions, getDateFormat } from "./VolTable/VolTableDate.js";
 import {
   isEmptyTag,
   filterChildrenColumn,
@@ -591,304 +712,410 @@ import {
   addTableRow,
   delTableRow,
   resetTable,
-  initPaginations
-} from './VolTable/VolTableProvider.js'
-import { getCellColor, formatDate, cellFormatter } from './VolTable/VolTableFormat.js'
-import { tableRowClick, rowEndEdit } from './VolTable/VolTableEdit.js'
-const VolTableUpload = defineAsyncComponent(() => import('./VolTable/VolTableUpload.vue'))
-import VolLoading from '@/components/basic/VolLoading'
-import VolImageViewer from '@/components/basic/VolImageViewer.vue'
+  initPaginations,
+} from "./VolTable/VolTableProvider.js";
+import {
+  getCellColor,
+  formatDate,
+  cellFormatter,
+} from "./VolTable/VolTableFormat.js";
+import {
+  tableRowClick,
+  rowEndEdit,
+  tableValidate,
+} from "./VolTable/VolTableEdit.js";
+import { regTableEventNext,getNextTableCell } from "./VolTable/VolTableEventNext.js";
+const VolTableUpload = defineAsyncComponent(() =>
+  import("./VolTable/VolTableUpload.vue")
+);
+import VolLoading from "@/components/basic/VolLoading";
+const VolImageViewer = defineAsyncComponent(() =>
+  import("@/components/basic/VolImageViewer.vue")
+);
+import VolTag from "@/components/basic/VolTag/VolTag.vue";
 const emit = defineEmits([
-  'dicInited',
-  'loadBefore',
-  'loadAfter',
-  'rowChange',
-  'selectionChange',
-  'onSortEnd',
-  'rowDbClick',
-  'rowClick',
-  'paginationChange'
-])
-const props = defineProps(VolTableProps())
-const { proxy, vnode } = getCurrentInstance()
+  "dicInited",
+  "loadBefore",
+  "loadAfter",
+  "rowChange",
+  "selectionChange",
+  "onSortEnd",
+  "rowDbClick",
+  "rowClick",
+  "paginationChange",
+  "headerDragend",
+]);
+const props = defineProps(VolTableProps());
+const { proxy, vnode } = getCurrentInstance();
 
-proxy.errMsg = ''
-proxy.errorFiled = ''
-const table = ref(null)
-const randomTableKey = ref(1)
-const realHeight = ref(0)
-const realMaxHeight = ref(0)
-const isPageLoad = ref(false)
-const defaultImg = new URL('@/assets/imgs/error-img.png', import.meta.url).href
-const loading = ref(false)
-const formatConfig = reactive({})
+proxy.errMsg = "";
+proxy.errorFiled = "";
+const table = ref(null);
+const randomTableKey = ref(1);
+const realHeight = ref(0);
+const realMaxHeight = ref(0);
+const isPageLoad = ref(false);
+const defaultImg = new URL("@/assets/imgs/error-img.png", import.meta.url).href;
+const loading = ref(false);
+const formatConfig = reactive({});
 //外部调用rowData只能使用splice+push
 // const rowData = reactive(props.tableData);
-const rowData = ref(props.tableData)
+const rowData = ref(props.tableData);
 
 //分页选择的数据
-const reserveSelectionRows = [] // reactive([]);
-const paginations = reactive(props.pagination)
-initPaginations(paginations)
+const reserveSelectionRows = []; // reactive([]);
+const paginations = reactive(props.pagination);
+initPaginations(paginations);
 
-const edit = reactive({ columnIndex: -1, rowIndex: -1 }) // 当前双击编辑的行与列坐标
+const edit = reactive({ columnIndex: -1, rowIndex: -1 }); // 当前双击编辑的行与列坐标
 // const summary = ref(false); // 是否显示合计
 // 目前只支持从后台返回的summaryData数据
-const summaryData = reactive([])
-const summaryIndex = reactive({})
-const cellStyleColumns = reactive({})
-const remoteColumns = reactive([]) // 需要每次刷新或分页后从后台加载字典数据源的列配置
+const summaryData = reactive([]);
+const summaryDataV2=ref({});
+const summaryIndex = reactive({});
+const cellStyleColumns = reactive({});
+const remoteColumns = reactive([]); // 需要每次刷新或分页后从后台加载字典数据源的列配置
 //-table带数据源的单元格是否启用tag标签(下拉框等单元格以tag标签显示)
 //2023.04.02更新voltable与main.js
-const useTag = ref(true)
+const useTag = ref(true);
 
-const smallCell = ref(true)
-const showDragMask = ref(false)
+const smallCell = ref(true);
+const showDragMask = ref(false);
+
 //文件权限token
-const access_token = ref(proxy.base.getAccessToken())
+const access_token = ref(proxy.base.getAccessToken());
 
 if (proxy.$global && proxy.$global.table) {
-  useTag.value = proxy.$global.table && proxy.$global.table.useTag
-  smallCell.value = proxy.$global.table && proxy.$global.table.smallCell
+  useTag.value = proxy.$global.table && proxy.$global.table.useTag;
+  smallCell.value = proxy.$global.table && proxy.$global.table.smallCell;
 }
 
 // 没有定义高度与最大高度，使用table默认值 // 定义了最大高度则不使用高度
 realHeight.value =
-  (!props.height && !props.maxHeight) || props.maxHeight ? null : props.height || null
+  (!props.height && !props.maxHeight) || props.maxHeight
+    ? null
+    : props.height || null;
 // 没有定义高度与最大高度，使用table默认值
-realMaxHeight.value = props.maxHeight || props.height || null
+if (props.dragPosition) {
+  realMaxHeight.value = 500;
+} else {
+  realMaxHeight.value = props.maxHeight || props.height || null;
+}
 
 const setHeight = (value) => {
-  realHeight.value = value
-}
+  realHeight.value = value;
+  realMaxHeight.value=value;
+};
 
 const getTableData = () => {
   // return rowData.value;
-  return props.url ? rowData.value : props.tableData
-}
+  return props.url ? rowData.value : props.tableData;
+};
 const getTable = () => {
-  return table.value
-}
+  return table.value;
+};
 const tableColumns = computed(() => {
   return proxy.columns.filter((x) => {
-    return !x.hidden
-  })
-})
+    return !x.hidden;
+  });
+});
 
 //右侧固定
 const fxRight = computed(() => {
   return proxy.columns.some((x) => {
-    return x.fixed == 'right' && !x.hidden
-  })
-})
+    return x.fixed == "right" && !x.hidden;
+  });
+});
 //左边固定
 const fixed = computed(() => {
   return props.columns.some((x) => {
-    return x.fixed && x.fixed != 'right' && !x.hidden
-  })
-})
+    return x.fixed && x.fixed != "right" && !x.hidden;
+  });
+});
 
 const initIndex = ({ row, rowIndex }) => {
   //if (props.ck) {
-  row.elementIndex = rowIndex
+  row.elementIndex = rowIndex;
   //}
-  return
-}
+  return;
+};
 // 背景颜色、合计
 const initConfig = () => {
-  initCellStyleSummary(props, proxy, cellStyleColumns, summaryData, summaryIndex)
-}
+  initCellStyleSummary(
+    props,
+    proxy,
+    cellStyleColumns,
+    summaryData,
+    summaryIndex,
+    summaryDataV2
+  );
+};
 const getSummaryData = () => {
-  return summaryData
-}
+  return summaryData;
+};
 const getCellClass = ({ row, column, rowIndex, columnIndex }) => {
   const b = props.columns.some((x) => {
-    return x.field === column.property && x.edit && (x.edit.keep || edit.rowIndex === rowIndex)
-  })
-  if (b) return 'current-edit-cell'
+    return (
+      x.field === column.property &&
+      x.edit &&
+      (x.edit.keep || edit.rowIndex === rowIndex)
+    );
+  });
+  if (b) return "current-edit-cell";
   if (props.columns[columnIndex]) {
-    return props.columns[columnIndex].class
+    return props.columns[columnIndex].class;
   }
-}
+};
 const getCellStyle = (option) => {
   // 2020.12.13增加设置单元格颜色
-  if (!option.column.property || !cellStyleColumns[option.column.property]) return
+  if (!option.column.property || !cellStyleColumns[option.column.property])
+    return;
   return cellStyleColumns[option.column.property](
     option.row,
     option.rowIndex,
     option.columnIndex,
     getTableData()
-  )
-}
-initConfig()
+  );
+};
+initConfig();
 
 //reset=是否重置
 const initDicKeys = (reset = true) => {
   initDataSource(proxy, props, reset, (dicData) => {
-    emit('dicInited', dicData)
-  })
-}
+    emit("dicInited", dicData);
+  });
+};
 //初始化字典
-initDicKeys(false)
+initDicKeys(false);
 
+// 全局绑定编辑输入跳转到下一个字段
+regTableEventNext(proxy, props, getTableData(), edit, nextTick);
 //获取选中行
 const getSelectionRows = () => {
+  if (props.tableV2) {
+    return getTableData().filter((x) => {
+      return x.elChecked;
+    });
+  }
   if (props.reserveSelection && props.rowKey) {
-    const rows = table.value.getSelectionRows()
+    const rows = table.value.getSelectionRows();
     if (!reserveSelectionRows.length) {
-      return rows
+      return rows;
     }
     const rows2 = reserveSelectionRows.filter((x) => {
       return !rows.some((c) => {
-        return c[props.rowKey] == x[props.rowKey]
-      })
-    })
+        return c[props.rowKey] == x[props.rowKey];
+      });
+    });
     //如果有删除行操作，这里可能不准会误删
-    return [...rows, ...rows2]
+    return [...rows, ...rows2];
   }
 
-  return table.value ? table.value.getSelectionRows() : []
+  return table.value ? table.value.getSelectionRows() : [];
+};
+//获取当前正在编辑的行
+const getCurrentEditRow=()=>{
+      if (edit.rowIndex==-1) {
+        return null;
+      }
+      return getTableData()[edit.rowIndex]
 }
 //获取选中行
 const getSelected = () => {
-  return getSelectionRows()
-}
-const getSelectedIndex = () => {
+  return getSelectionRows();
+};
+const getSelectedIndex = (rows) => {
   // if (!props.index) {
   //   // 只有设置了属性index才有索引行
   //   return [];
   // }
-  return getSelectionRows().map((x) => {
-    return x.elementIndex
-  })
-}
+  return (rows || getSelectionRows()).map((x) => {
+    return x.elementIndex;
+  });
+};
 //合计
 const initSummary = () => {
-  initSummaryData(props, getTableData(), summaryData, summaryIndex)
-}
+  initSummaryData(props, getTableData(), summaryData, summaryIndex,summaryDataV2);
+};
 const getInputSummaries = (scope, val, event, column) => {
-  if (!column) return
-  initColumnSummaryData(column)
-}
+  if (!column) return;
+  initColumnSummaryData(column);
+};
 //设置字段配置合计
 const setColumnSummary = (column) => {
-  initColumnSummaryData(column, getTableData(), summaryData, summaryIndex)
-}
+  initColumnSummaryData(column, getTableData(), summaryData, summaryIndex,summaryDataV2);
+};
 if (props.tableData.length) {
-  initSummary()
+  initSummary();
 }
 
 const clearSelection = () => {
-  reserveSelectionRows.splice(0)
-  table.value.clearSelection()
-}
+  reserveSelectionRows.splice(0);
+  if (props.tableV2) {
+    getTableData().forEach((x) => {
+      x.elChecked = false;
+    });
+    return;
+  } else {
+    table.value.clearSelection();
+  }
+};
 
 const toggleRowSelection = (row) => {
-  table.value.toggleRowSelection(row)
-}
+  if (props.tableV2) {
+    row.elChecked = true;
+    return;
+  }
+  table.value.toggleRowSelection(row);
+};
 
 const watchRowSelectChange = (newLen, oldLen) => {
+  if (props.tableV2) {
+    return;
+  }
   if (!props.reserveSelection && newLen < oldLen && getSelectionRows().length) {
     //reserveSelectionRows.splice(0);
-    clearSelection()
+    clearSelection();
   }
   if (!props.reserveSelection && isPageLoad.value) {
-    isPageLoad.value = false
-    return
+    isPageLoad.value = false;
+    return;
   }
-  initSummary()
-}
+  initSummary();
+};
 //刷新指定字段合计
-const updateSummary = (fields) => {
+const updateSummary = (fields, reset) => {
   if (!fields) {
     fields = props.columns
       .filter((c) => {
-        return c.summary
+        return c.summary;
       })
       .map((c) => {
-        return c.field
-      })
+        return c.field;
+      });
   } else if (!Array.isArray(fields)) {
-    fields = [fields]
+    fields = [fields];
+  }
+  if (reset) {
+    initConfig();
   }
   for (let index = 0; index < fields.length; index++) {
-    const field = fields[index]
+    const field = fields[index];
     //这里可能有多级表头
-    const column = proxy.base.getColumn(props.columns, field)
+    const column = proxy.base.getColumn(props.columns, field);
     if (column) {
-      setColumnSummary(column)
+      setColumnSummary(column);
     }
   }
-}
+};
 
 //输入事件
 const inputKeypress = (row, column, $event) => {
-  inputChange(row, column, $event)
-  setColumnSummary(column)
-}
+  inputChange(row, column, $event);
+  setColumnSummary(column);
+};
 const link = (row, column, $e) => {
-  $e.stopPropagation && $e.stopPropagation()
-  props.linkView(row, column)
-}
+  $e && $e.stopPropagation && $e.stopPropagation();
+  props.linkView(row, column);
+};
 
 const headerClick = (column, event) => {
   if (edit.rowIndex != -1) {
-    const b = rowEndEdit(proxy, props, getTableData(), column, edit)
+    const b = rowEndEdit(proxy, props, getTableData(), column, edit);
     if (b) {
-      edit.rowIndex = -1
+      edit.rowIndex = -1;
     }
   }
-}
+};
+
+const headerDragend = (newWidth, oldWidth, column, event) => {
+  emit("headerDragend", { newWidth, oldWidth, column, event });
+};
+
 //行双击事件
 const rowDbClick = (row, column, event) => {
   //2021.05.23增加双击行事件
-  emit('rowDbClick', { row, column, event, index: row.elementIndex })
-}
+  emit("rowDbClick", { row, column, event, index: row.elementIndex });
+};
+
+const rowClickV2 = (param) => {
+  // console.log(param)
+  rowClick(param.rowData, null, param.event);
+  // console.log(edit);
+};
+
 //行点击事件
 const rowClick = (row, column, event) => {
   if (!column) {
     column = props.columns.find((x) => {
-      return x.field && x.edit && !x.edit.readonly && !x.readonly
-    })
+      return x.edit && !x.hidden && !x.readonly;
+    })||{};
   } else if (!column.field && column.property) {
-    column = props.columns.find((x) => {
-      return x.field == column.property
-    })
+      column = props.columns.find((x) => {
+          return x.field == column.property;
+      });
   }
 
-  tableRowClick(proxy, props, getTableData(), edit, nextTick, emit, row, column, event)
+  tableRowClick(
+    proxy,
+    props,
+    getTableData(),
+    edit,
+    nextTick,
+    emit,
+    row,
+    column,
+    event
+  );
   // console.log(edit);
-}
+};
 
 //图片预览
-const viewer = ref(null)
+const viewer = ref(null);
 const viewImg = (row, column, path, $event, index) => {
-  $event && $event.stopPropagation()
-  previewImg(proxy, row, column, index, viewer.value)
-}
+  $event && $event.stopPropagation();
+  previewImg(proxy, row, column, index, viewer.value);
+};
 
 const getFilePath = (url, column) => {
-  return getPath(url, column, proxy)
-}
+  return getPath(url, column, proxy);
+};
 
-const dowloadFile = (file) => {
+const dowloadFile = (file, column, index, row) => {
+  //file,column,fIndex
+  if (
+    column &&
+    column.fileClick &&
+    column.fileClick(index, file, [file], row) === false
+  ) {
+    return;
+  }
+
+  if (
+    file.path.toLowerCase().endsWith(".jpg") ||
+    file.path.toLowerCase().endsWith(".jpeg") ||
+    file.path.toLowerCase().endsWith(".png")
+  ) {
+    previewImg(proxy, { img: file.path }, { field: "img" }, 0, viewer.value);
+    return;
+  }
   proxy.base.dowloadFile(
     file.path + access_token.value,
     file.name,
     {
-      Authorization: proxy.$store.getters.getToken()
+      Authorization: proxy.$store.getters.getToken(),
     },
-    proxy.http.ipAddress
-  )
-}
+    proxy.$global.oss?.url || proxy.http.ipAddress
+  );
+};
 const reset = () => {
-  resetTable(proxy, props, getTableData(), paginations, edit)
-}
+  resetTable(proxy, props, getTableData(), paginations, edit);
+};
 
 //加数据
 const load = async (query, isResetPage) => {
   if (!props.url) {
-    return
+    return;
   }
   let data = await loadData(
     props,
@@ -902,57 +1129,67 @@ const load = async (query, isResetPage) => {
     isResetPage,
     isPageLoad,
     randomTableKey
-  )
+  );
   if (!data) {
-    return
+    return;
   }
-  //重置合计
-  loadDataSummaries(proxy, props, data, summaryData)
+  // data.summary = null;
+  //没有返回合计，但有合计字段的，前端默认对当前页面的数据进行合计处理
+
+  if (!data.summary && summaryData?.length) {
+    //initConfig()
+    updateSummary();
+    //console.log(summaryData)
+  } else {
+    //重置合计
+    loadDataSummaries(proxy, props, data, summaryData,summaryDataV2);
+  }
+
   //设置分页后记录默认选中行2024.09.10
-  if (!(props.reserveSelection && props.rowKey)) return
+  if (!(props.reserveSelection && props.rowKey)) return;
   // isPageLoad.value = false;
   nextTick(() => {
-    isPageLoad.value = true
-    const selectRows = reserveSelectionRows
+    isPageLoad.value = true;
+    const selectRows = reserveSelectionRows;
     getTableData().forEach((row) => {
       const b = selectRows.some((c) => {
-        return c[proxy.rowKey] === row[proxy.rowKey]
-      })
-      if (b) toggleRowSelection(row)
-    })
-    isPageLoad.value = false
-  })
-}
+        return c[proxy.rowKey] === row[proxy.rowKey];
+      });
+      if (b) toggleRowSelection(row);
+    });
+    isPageLoad.value = false;
+  });
+};
 if (props.defaultLoadPage) {
-  load()
+  load();
 }
 
 const handleSizeChange = (val) => {
-  paginations.size = val
-  paginations.rows = val
-  load()
-  emit('paginationChange', paginations)
-}
+  paginations.size = val;
+  paginations.rows = val;
+  load();
+  emit("paginationChange", paginations);
+};
 const handleCurrentChange = (val) => {
-  paginations.page = val
-  load()
-  emit('paginationChange', paginations)
-}
+  paginations.page = val;
+  load();
+  emit("paginationChange", paginations);
+};
 const sortChange = (sort) => {
   if (props.url) {
-    paginations.sort = sort.prop
-    paginations.order = sort.order == 'ascending' ? 'asc' : 'desc'
-    load()
-    return
+    paginations.sort = sort.prop;
+    paginations.order = sort.order == "ascending" ? "asc" : "desc";
+    load();
+    return;
   }
-  const rows = getTableData()
+  const rows = getTableData();
   rows.sort(function (a, b) {
-    if (sort.order == 'ascending') {
-      return a[sort.prop] - b[sort.prop]
+    if (sort.order == "ascending") {
+      return a[sort.prop] - b[sort.prop];
     }
-    return b[sort.prop] - a[sort.prop]
-  })
-}
+    return b[sort.prop] - a[sort.prop];
+  });
+};
 //复选框选中事件
 const selectionChange = (selection) => {
   selectionRowChange(
@@ -963,141 +1200,232 @@ const selectionChange = (selection) => {
     table.value,
     reserveSelectionRows,
     isPageLoad
-  )
-}
+  );
+};
 const userSelect = (selection, row) => {
   //   this.$emit("rowChange", { row, selection });
-}
-const isDateChange = ref(false)
+};
+const isDateChange = ref(false);
 const dateVisibleChang = (show) => {
-  isDateChange.value = show
-}
+  isDateChange.value = show;
+};
 const dateChange = (row, column, val) => {
-  isDateChange.value = true
-  column.onChange && column.onChange(row, column, val)
-}
+  isDateChange.value = true;
+  column.onChange && column.onChange(row, column, val);
+};
 //树形结构展开事件
 const expandChange = (row, expandedRows) => {
-  expandTreeChange(props, row, expandedRows)
-}
+  expandTreeChange(props, row, expandedRows);
+};
 
 //单元格颜色
 const getColor = (row, column) => {
-  return getCellColor(row, column, formatConfig)
-}
+  return getCellColor(row, column, formatConfig);
+};
 //格式化
 const formatter = (row, column, template) => {
-  return cellFormatter(proxy, row, column, template)
-}
+  return cellFormatter(proxy, row, column, template);
+};
 const formatterClick = (row, column, event) => {
   if (column.click) {
-    column.click(row, column, event)
-    event.stopPropagation && event.stopPropagation()
+    column.click(row, column, event);
+    event && event.stopPropagation && event.stopPropagation();
   } else {
-    rowClick(row, column, event)
+    rowClick(row, column, event);
   }
-}
+};
 //合并单元格
 const cellSpanMethod = ({ row, column, rowIndex, columnIndex }) => {
-  return props.spanMethod({ row, column, rowIndex, columnIndex }, getTableData())
-}
+  return props.spanMethod(
+    { row, column, rowIndex, columnIndex },
+    getTableData()
+  );
+};
 //表头过滤
 const getFilters = (column) => {
-  return getColumnFilters(proxy, column, getTableData())
-}
+  return getColumnFilters(proxy, column, getTableData());
+};
 
 const filterHandler = (value, row, column) => {
-  return row[column.property] === value
-}
+  return row[column.property] === value;
+};
 
 const handleImageError = ($e) => {
-  $e.target.src = defaultImg
-}
+  $e.target.src = defaultImg;
+};
 //按回车跳转到下一行
-const toNextCell = (row, nextField, newRow) => {
-  toNextTableCell(proxy, props, getTableData(), row, edit, nextField, newRow)
-}
+const toNextCell = (row,column) => {
+  getNextTableCell(proxy, props, getTableData(), edit, nextTick, row, column);
+  // toNextTableCell(proxy, props, getTableData(), row, edit, nextField, newRow);
+};
 //添加行
 const addRow = (row) => {
-  addTableRow(proxy, props, getTableData(), row)
-  return row
-}
+  addTableRow(proxy, props, getTableData(), row);
+  return row;
+};
 
 const delRow = (rows) => {
-   rows =rows|| getSelected()
-  delTableRow(proxy, edit, getTableData(), rows, getSelectedIndex())
-  return rows
-}
+  if (rows) {
+    if (!Array.isArray(rows)) {
+      rows = [rows];
+    }
+  } else {
+    rows = getSelected();
+  }
+
+  delTableRow(proxy, edit, getTableData(), rows, getSelectedIndex(rows));
+  return rows;
+};
 
 //上传图片、文件
-const uploadRef = ref(null)
+const uploadRef = ref(null);
 const showUpload = (row, column) => {
-  uploadRef.value.showUpload(row, column, props.url)
-}
+  uploadRef.value.showUpload(row, column, props.url);
+};
 
-const refTable = ref()
+const refTable = ref();
 
 const setEdit = (index) => {
   //结束编辑
   if (index == -1) {
     if (edit.rowIndex == -1) {
-      return
+      return;
     }
-    let row = getTableData[edit.rowIndex]
-    rowEndEdit(proxy, props, getTableData(), row, edit)
-    return
+    let row = getTableData[edit.rowIndex];
+    rowEndEdit(proxy, props, getTableData(), row, edit);
+    return;
   }
   //开启编辑
-  rowClick(getTableData()[index], null, {})
-}
+  rowClick(getTableData()[index], null, {});
+};
+const scrollInfo = ref({ scrollLeft: 0, scrollTop: 0 });
+const scrollTable = (data) => {
+  if (!props.sortable) {
+    return;
+  }
+  scrollInfo.value = data;
+};
 
-// watch(
-//   () => props.tableData.length,
-//   (newLen, oldLen) => {
-//     watchRowSelectChange(newLen, oldLen);
-//   }
-// );
+const columnsV2 = computed(() => {
+  return [];
+});
+
+const tableDataV2 = computed(() => {
+  const _rows = getTableData();
+  _rows.forEach((x, index) => {
+    x.elementIndex = index;
+  });
+  return _rows;
+});
+
+const tableV2SummaryHeight = computed(() => {
+  return props.columns.some((x) => {
+    return x.summary && !x.hidden;
+  })
+    ? 37
+    : 0;
+});
+
+const tableV2FooterColumns = computed(() => {
+  return props.columns.filter((x) => {
+    return !x.hidden
+  })
+});
+
+
+let tableDataChange = false;
+watch(
+  () => props.tableData.length,
+  (newLen, oldLen) => {
+    tableDataChange = true;
+    // console.log('tableData')
+    watchRowSelectChange(newLen, oldLen);
+  }
+);
 watch(
   () => rowData.value.length,
   (newLen, oldLen) => {
-    watchRowSelectChange(newLen, oldLen)
+    if (tableDataChange) {
+      tableDataChange = false;
+      return;
+    }
+    // console.log('rowData')
+    watchRowSelectChange(newLen, oldLen);
   }
-)
+);
 
 const handleTableClickOutside = async (event) => {
-  if (!refTable.value?.contains(event.target)) {
-    if (isDateChange.value) return
+  const target = event.target;
+  // 日期/时间选择器面板 teleport 到 body，点击面板不应结束行编辑
+  if (
+    target &&
+    typeof target.closest === "function" &&
+    target.closest('[class*="picker__popper"]')
+  ) {
+    return;
+  }
+  if (!refTable.value?.contains(target)) {
+    if (isDateChange.value) return;
     if (edit.rowIndex != -1) {
-      let row = getTableData[edit.rowIndex]
-      if ((await rowEndEdit(proxy, props, getTableData(), row, edit)) !== false) {
-        edit.rowIndex = -1
-      }
+      // let row = getTableData[edit.rowIndex];
+      //if ((await rowEndEdit(proxy, props, getTableData(), row, edit)) !== false) {
+      edit.rowIndex = -1;
+      //}
     }
   }
-}
+};
 
-const dragRef = ref(null)
+const dragRef = ref(null);
 const hasEdit = () => {
   return props.columns.some((x) => {
-    return x.edit
-  })
-}
+    return x.edit;
+  });
+};
+
+const validate = (callBack) => {
+  const res = tableValidate(proxy, props, getTableData());
+  callBack?.(res);
+  return res;
+};
+
 onMounted(() => {
-  nextTick(() => {
-    initDrag(props, dragRef.value, refTable.value, showDragMask, realHeight)
-  })
   if (hasEdit()) {
-    document.addEventListener('click', handleTableClickOutside)
+    document.addEventListener("click", handleTableClickOutside);
   }
+  if (props.tableV2) return;
+  nextTick(() => {
+    if (props.dragPosition) {
+      nextTick(() => {
+        initDrag(
+          props,
+          dragRef.value,
+          refTable.value,
+          showDragMask,
+          realHeight
+        );
+      });
+    }
+  });
   initSortable(props, emit, nextTick, refTable.value, () => {
-    return getTableData()
-  })
-})
+    return {
+      rows: getTableData(),
+      elTableRef: getTable(),
+      scrollInfo: scrollInfo.value,
+    };
+  });
+});
 onUnmounted(() => {
   if (hasEdit()) {
-    window.removeEventListener('click', handleTableClickOutside)
+    document.removeEventListener("click", handleTableClickOutside);
   }
-})
+});
+
+const focus=(row,field)=>{
+    const $el=  proxy.$refs[field + row.elementIndex];
+    if (Array.isArray($el) && $el.length) {
+       $el[0].focus();
+    }
+}
 
 defineExpose({
   table,
@@ -1111,12 +1439,15 @@ defineExpose({
   setHeight,
   initConfig,
   initDicKeys,
+  summaryData,
+  summaryIndex,
   initSummary,
   getInputSummaries,
   setColumnSummary,
   getSelectionRows,
   getSelected,
   getSelectedIndex,
+  getCurrentEditRow,
   load,
   updateSummary,
   toNextCell,
@@ -1128,9 +1459,11 @@ defineExpose({
   reset,
   setEdit,
   viewImg,
-  tableData: props.tableData
-})
+  tableData: props.tableData,
+  validate,
+  focus
+});
 </script>
 <style lang="less" scoped>
-@import './VolTable/VolTable.less';
+@import "./VolTable/VolTable.less";
 </style>

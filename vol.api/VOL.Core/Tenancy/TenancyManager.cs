@@ -14,7 +14,7 @@ namespace VOL.Core.Tenancy
         /// <returns></returns>
         public static string GetSearchQueryable(string tableName)
         {
-            string multiTenancyString = $"select * from {tableName}";
+            string multiTenancyString = null;
             //超级管理员不限制
             //if (UserContext.Current.IsSuperAdmin)
             //{
@@ -28,29 +28,7 @@ namespace VOL.Core.Tenancy
                 //    break;
                 default:
                     //开启数租户数据隔离,用户只能看到自己的表数据(自己根据需要写条件做租户数据隔离)
-                    multiTenancyString += $" where CreateID='{UserContext.Current.UserId}'";
-                    break;
-            }
-            return multiTenancyString;
-        }
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="tableName">数据库表名</param>
-        /// <param name="ids">当前操作的所有id</param>
-        /// <param name="tableKey">主键字段</param>
-        /// <returns></returns>
-        public static string GetMultiTenancySql(string tableName, string ids, string tableKey)
-        {
-            //使用方法同上
-            string multiTenancyString;
-            switch (tableName)
-            {
-                default:
-                    multiTenancyString = $"select count(*) FROM {tableName} " +
-                       $" where CreateID='{UserContext.Current.UserId}'" +
-                       $" and  { tableKey} in ({ids}) ";
+                    // multiTenancyString += $" elect * from {tableName} where CreateID='{UserContext.Current.UserId}'";
                     break;
             }
             return multiTenancyString;

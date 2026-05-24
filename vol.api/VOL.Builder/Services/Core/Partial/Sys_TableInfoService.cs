@@ -1,5 +1,4 @@
-﻿using VOL.Builder.Utility;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyModel;
 using Newtonsoft.Json;
 using System;
@@ -11,11 +10,15 @@ using System.Reflection;
 using System.Runtime.Loader;
 using System.Text;
 using System.Threading.Tasks;
+using VOL.Builder.Utility;
+using VOL.Core.BaseProvider;
+using VOL.Core.Configuration;
 using VOL.Core.Const;
 using VOL.Core.DBManager;
 using VOL.Core.Enums;
 using VOL.Core.Extensions;
 using VOL.Core.ManageUser;
+using VOL.Core.UserManager;
 using VOL.Core.Utilities;
 using VOL.Entity.DomainModels;
 using VOL.Entity.DomainModels.Sys;
@@ -83,7 +86,8 @@ namespace VOL.Builder.Services
                     pId = c.ParentId,
                     parentId = c.ParentId,
                     name = c.ColumnCNName,
-                    orderNo = c.OrderNo
+                    orderNo = c.OrderNo,
+                    c.TableName
                 }).OrderByDescending(c => c.orderNo).ToListAsync();
             var treeList = treeData.Select(a => new
             {
@@ -91,6 +95,7 @@ namespace VOL.Builder.Services
                 a.pId,
                 a.parentId,
                 a.name,
+                tableName = a.TableName,
                 isParent = treeData.Select(x => x.pId).Contains(a.id)
             });
             string startsWith = WebProject.Substring(0, WebProject.IndexOf('.'));
@@ -103,11 +108,13 @@ namespace VOL.Builder.Services
         /// 2020.05.17增加mysql获取表结构时区分当前所在数据库
         /// </summary>
         /// <returns></returns>
-        private string GetMysqlTableSchema()
+        private string GetMysqlTableSchema(string connection)
         {
             try
             {
-                string dbName = DBServerProvider.GetConnectionString().Split("Database=")[1].Split(";")[0]?.Trim();
+                connection = DBServerProvider.GetConnectionString(connection);
+                string dbName = connection.Split("Database=")[1].Split(";")[0]?.Trim();
+                //  DBServerProvider.GetConnectionString().Split("Database=")[1].Split(";")[0]?.Trim();
                 if (!string.IsNullOrEmpty(dbName))
                 {
                     dbName = $" and table_schema = '{dbName}' ";
@@ -122,30 +129,11 @@ namespace VOL.Builder.Services
         }
 
         /// <summary>
-        /// 2023.11.14 增加达梦获取表结构时区分当前所在模式
-        /// </summary>
-        /// <param name="dbConnection"></param>
-        /// <returns></returns>
-        private string GetDMOwner()
-        {
-            try
-            {
-                string dbName = DBServerProvider.GetConnectionString().Split("schema=")[1].Split(";")[0]?.Trim();
-                return dbName;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"获取达梦数据库名异常:{ex.Message}");
-                return "";
-            }
-        }
-
-        /// <summary>
         /// 获取Mysql表结构信息
         /// 2020.06.14增加对mysql数据类型double区分
         /// </summary>
         /// <returns></returns>
-        private string GetMySqlModelInfo()
+        private string GetMySqlModelInfo(string connection)
         {
             return $@"SELECT
 DISTINCT
@@ -154,7 +142,7 @@ DISTINCT
                  WHEN data_type IN( 'BIT', 'BOOL','bit', 'bool') THEN
                 'bool'
                  WHEN data_type in('smallint','SMALLINT') THEN 'short'
-				WHEN data_type in('tinyint', 'TINYINT') THEN 'sbyte'
+				WHEN data_type in('tinyint', 'TINYINT') THEN 'tinyint'
                 WHEN data_type IN('MEDIUMINT','mediumint', 'int','INT','year', 'Year') THEN
                 'int'
                 WHEN data_type in ( 'BIGINT','bigint') THEN
@@ -171,32 +159,9 @@ DISTINCT
             FROM
                 information_schema.COLUMNS
             WHERE
-                table_name = ?tableName {GetMysqlTableSchema()};";
+                table_name = ?tableName {GetMysqlTableSchema(connection)};";
         }
 
-        /// <summary>
-        /// 获取达梦表结构信息 2023.11.14
-        /// </summary>
-        /// <returns></returns>
-        private string GetDMModelInfo()
-        {
-            return $@"SELECT DISTINCT
-                        IF(DATA_PRECISION IS NOT NULL, CONCAT(DATA_PRECISION,',',DATA_SCALE),'') as Prec_Scale,
-                        CASE
-                            WHEN data_type IN( 'BIT', 'BOOL','bit', 'bool') THEN 'bool'
-                            WHEN data_type in('smallint','SMALLINT') THEN 'short'
-                            WHEN data_type in('tinyint', 'TINYINT') THEN 'sbyte'
-                            WHEN data_type IN('MEDIUMINT','mediumint', 'int','INT','year', 'Year') THEN 'int'
-                            WHEN data_type in ( 'BIGINT','bigint') THEN 'bigint'
-                            WHEN data_type IN('FLOAT',  'DECIMAL','float', 'decimal') THEN 'decimal'
-							WHEN data_type IN( 'DOUBLE', 'double') THEN 'double'
-                            WHEN data_type IN('CHAR', 'VARCHAR', 'TINY TEXT', 'TEXT', 'MEDIUMTEXT', 'LONGTEXT', 'TINYBLOB', 'BLOB', 'MEDIUMBLOB', 'LONGBLOB', 'Time','char', 'varchar', 'tiny text', 'text', 'mediumtext', 'longtext', 'tinyblob', 'blob', 'mediumblob', 'longblob', 'time') THEN 'nvarchar'
-                            WHEN data_type IN('Date', 'DateTime', 'TimeStamp','date', 'datetime', 'timestamp') THEN 'datetime' ELSE 'nvarchar'
-                        END AS ColumnType,
-                        Column_Name AS ColumnName
-                        FROM user_tab_columns 
-                        WHERE table_name = :tableName ";
-        }
 
         /// <summary>
         /// 获取SqlServer表结构信息
@@ -205,7 +170,7 @@ DISTINCT
         private string GetSqlServerModelInfo()
         {
             return $@"
-	SELECT CASE WHEN t.ColumnType IN ('DECIMAL','smallmoney','money') THEN 
+	SELECT CASE WHEN t.ColumnType IN ('decimal','smallmoney','money','real') THEN 
                     CONVERT(VARCHAR(30),t.Prec)+','+CONVERT(VARCHAR(30),t.Scale)  ELSE ''
                      END 
                     AS Prec_Scale,t.ColumnType,t.ColumnName
@@ -224,37 +189,6 @@ DISTINCT
                                                                                   AND epTwo.name = 'MS_Description'
                                       WHERE     obj.name =@tableName) AS t";
         }
-
-        /// <summary>
-        /// 获取Oracle表结构信息2024.04.10
-        /// </summary>
-        /// <returns></returns>
-        private string GetOracleModelInfo(string tableName)
-        {
-            return $@"SELECT
-			c.TABLE_NAME TableName ,
-			cc.COLUMN_NAME COLUMNNAME,
-			cc.COMMENTS  as  ColumnCNName,
-			CASE WHEN   c.DATA_TYPE IN('smallint', 'INT') or (c.DATA_TYPE='NUMBER' and c.DATA_LENGTH=0)   THEN 'int'  
-            WHEN  c.DATA_TYPE IN('NUMBER') THEN 'decimal'  
-			WHEN c.DATA_TYPE IN('CHAR', 'VARCHAR', 'NVARCHAR','VARCHAR2', 'NVARCHAR2','text', 'image')
-			THEN 'nvarchar'
-		  WHEN  c.DATA_TYPE IN('DATE') THEN 'date'  
-			ELSE 'nvarchar' 
-			end    as ColumnType,
-			c.DATA_LENGTH  as Maxlength,
-			case WHEN 	c.NULLABLE='Y' THEN 1 ELSE 0 end   as ISNULL
-			
-          -- CONCAT(NUMERIC_PRECISION,',',NUMERIC_SCALE) as Prec_Scale
-			FROM
-			ALL_tab_columns c
-			LEFT JOIN   ALL_col_comments cc ON c.table_name = cc.table_name 
-			AND c.column_name = cc.column_name
-			LEFT JOIN   ALL_tab_comments t ON c.table_name = t.table_name 
-			WHERE 		   c.table_name='{tableName.ToUpper()}'";
-
-        }
-
         /// <summary>
         /// 获取PgSQl表结构信息
         /// 2020.08.07完善PGSQL
@@ -279,7 +213,7 @@ DISTINCT
             stringBuilder.Append("					WHEN col.udt_name = 'int8' THEN ");
             stringBuilder.Append("					'long'  ");
             stringBuilder.Append("					WHEN col.udt_name IN ( 'char', 'varchar', 'text', 'xml', 'bytea' ) THEN ");
-            stringBuilder.Append("					'string'  ");
+            stringBuilder.Append("					'varchar'  ");
             stringBuilder.Append("					WHEN col.udt_name IN ( 'bool' ) THEN ");
             stringBuilder.Append("					'bool'  ");
             stringBuilder.Append("					WHEN col.udt_name IN ( 'date','timestamp' ) THEN ");
@@ -287,11 +221,74 @@ DISTINCT
             stringBuilder.Append("					WHEN col.udt_name IN ( 'decimal', 'money','numeric' ) THEN ");
             stringBuilder.Append("					'decimal'  ");
             stringBuilder.Append("					WHEN col.udt_name IN ( 'float4', 'float8' ) THEN ");
-            stringBuilder.Append("					'float' ELSE'string '  ");
+            stringBuilder.Append("					'float' ELSE 'varchar '  ");
             stringBuilder.Append("				END  as ColumnType ");
             stringBuilder.Append("from 	information_schema.COLUMNS col  ");
             stringBuilder.Append("WHERE	\"lower\" ( TABLE_NAME ) = \"lower\" (@tableName )  ");
             return stringBuilder.ToString();
+        }
+
+
+        private string GetOracleStructure(string tableName)
+        {
+            return $@"SELECT
+                    c.TABLE_NAME TableName,
+                    cc.COLUMN_NAME COLUMNNAME,
+                    cc.COMMENTS as ColumnCNName,
+                    CASE 
+                        -- 判断是否为BIGINT（NUMBER且精度≥19、小数位为0）
+                        WHEN c.DATA_TYPE = 'NUMBER' AND c.DATA_PRECISION >= 19 AND (c.DATA_SCALE = 0 OR c.DATA_SCALE IS NULL) THEN 'bigint'
+                        WHEN c.DATA_TYPE IN('smallint', 'INT') OR (c.DATA_TYPE='NUMBER' AND (c.DATA_SCALE=0 OR c.DATA_SCALE IS NULL)) THEN 'int'  
+                        WHEN c.DATA_TYPE='NUMBER' AND c.DATA_SCALE>0 THEN 'decimal'
+                        WHEN c.DATA_TYPE IN('float', 'FLOAT') THEN 'float'
+                        WHEN c.DATA_TYPE IN('CHAR', 'VARCHAR', 'NVARCHAR','VARCHAR2', 'NVARCHAR2','text', 'image') THEN 'string'
+                        WHEN c.DATA_TYPE IN('DATE') THEN 'DateTime'  
+                        ELSE 'string' 
+                    END as ColumnType,
+                    c.DATA_LENGTH as Maxlength,
+                    case WHEN c.NULLABLE='Y' THEN 1 ELSE 0 end as ISNULL,
+                    1 IsColumnData,
+                    1 IsDisplay
+                FROM
+                    user_tab_columns c
+                LEFT JOIN user_col_comments cc 
+                    ON c.table_name = cc.table_name AND c.column_name = cc.column_name
+                LEFT JOIN user_tab_comments t 
+                    ON c.table_name = t.table_name 
+                WHERE
+                    c.table_name='{tableName.ToUpper()}'";
+            //order by c.column_id;
+        }
+
+
+        private string GetOracleModelInfo(string tableName)
+        {
+            return $@"SELECT
+			c.TABLE_NAME TableName ,
+			cc.COLUMN_NAME COLUMNNAME,
+			cc.COMMENTS  as  ColumnCNName,
+       CASE 
+          -- 判断是否为BIGINT（NUMBER且精度≥19、小数位为0）
+        WHEN c.DATA_TYPE = 'NUMBER' AND c.DATA_PRECISION >= 19 AND (c.DATA_SCALE = 0 OR c.DATA_SCALE IS NULL) THEN 'bigint'
+        WHEN  c.DATA_TYPE IN('smallint', 'INT') OR  (c.DATA_TYPE='NUMBER' AND (c.DATA_SCALE=0 or c.DATA_SCALE IS null)) THEN 'int'  
+	         WHEN  c.DATA_TYPE='NUMBER' AND c.DATA_SCALE>0 THEN 'decimal'
+             WHEN  c.DATA_TYPE IN('float', 'FLOAT')  THEN 'float'
+			WHEN c.DATA_TYPE IN('CHAR', 'VARCHAR', 'NVARCHAR','VARCHAR2', 'NVARCHAR2','text', 'image')
+			THEN 'nvarchar'
+		  WHEN  c.DATA_TYPE IN('DATE') THEN 'date'  
+			ELSE 'nvarchar' 
+			end    as ColumnType,
+			c.DATA_LENGTH  as Maxlength,
+			case WHEN 	c.NULLABLE='Y' THEN 1 ELSE 0 end   as ISNULL
+			
+          -- CONCAT(NUMERIC_PRECISION,',',NUMERIC_SCALE) as Prec_Scale
+			FROM
+			ALL_tab_columns c
+			LEFT JOIN   ALL_col_comments cc ON c.table_name = cc.table_name 
+			AND c.column_name = cc.column_name
+			LEFT JOIN   ALL_tab_comments t ON c.table_name = t.table_name 
+			WHERE 		   c.table_name='{tableName.ToUpper()}'";
+
         }
 
         private WebResponseContent ExistsTable(string tableName, string tableTrueName)
@@ -361,38 +358,31 @@ DISTINCT
                 tableName = sysTableInfo.TableTrueName;
             }
 
-            string sql = "";
-            switch (DBType.Name)
+            string sql;
+            string connection = GetConnectionKey(sysTableInfo);
+            string dbType = DBType.Name;
+
+            switch (dbType)
             {
                 case "MySql":
-                    sql = GetMySqlModelInfo();
+                    sql = GetMySqlModelInfo(connection);
                     break;
                 case "PgSql":
                     sql = GetPgSqlModelInfo();
                     break;
-                case "Oracle":
-                    sql = GetOracleModelInfo(tableName);
-                    break;
-                case "DM":
-                    sql = GetDMModelInfo();
-                    break;
-                default:
+                case "MsSql":
                     sql = GetSqlServerModelInfo();
                     break;
+                default:
+                    sql = GetOracleModelInfo(tableName);
+                    break;
             }
-            List<TableColumnInfo> tableColumnInfoList = repository.DapperContext.QueryList<TableColumnInfo>(sql, new { tableName });
+
+            List<TableColumnInfo> tableColumnInfoList = repository.QueryList<TableColumnInfo>(sql, new { tableName });
             List<Sys_TableColumn> list = sysTableInfo.TableColumns;
             string msg = CreateEntityModel(list, sysTableInfo, tableColumnInfoList, 1);
             if (msg != "")
                 return msg;
-            //if (list.Any(c => c.ApiInPut > 0))
-            //{
-            //    CreateEntityModel(list.Where(c => c.ApiInPut > 0).ToList(), sysTableInfo, tableColumnInfoList, 2);
-            //}
-            //if (list.Any(c => c.ApiOutPut > 0))
-            //{
-            //    CreateEntityModel(list.Where(c => c.ApiOutPut > 0).ToList(), sysTableInfo, tableColumnInfoList, 3);
-            //}
             return "Model创建成功!";
         }
 
@@ -405,15 +395,19 @@ DISTINCT
         {
             WebResponseContent webResponse = ValidColumnString(sysTableInfo);
             if (!webResponse.Status) return webResponse;
+
+            if (!webResponse.Status) return webResponse;
             //2020.05.07新增禁止选择上级角色为自己
             if (sysTableInfo.Table_Id == sysTableInfo.ParentId)
             {
                 return WebResponseContent.Instance.Error($"父级id不能为自己");
             }
-            if (sysTableInfo.TableColumns != null && sysTableInfo.TableColumns.Any(x => !string.IsNullOrEmpty(x.DropNo) && x.ColumnName == sysTableInfo.ExpressField))
+
+            if (repository.Exists(x => x.ParentId == sysTableInfo.Table_Id && x.Table_Id == sysTableInfo.ParentId))
             {
-                return WebResponseContent.Instance.Error($"不能将字段【{sysTableInfo.ExpressField}】设置为快捷编辑,因为已经设置了数据源");
+                return WebResponseContent.Instance.Error($"不能选择此父级");
             }
+
             if (sysTableInfo.TableColumns != null)
             {
                 sysTableInfo.TableColumns.ForEach(x =>
@@ -428,8 +422,19 @@ DISTINCT
                 {
                     x.IsReadDataset = 0;
                 }
+                if (!string.IsNullOrEmpty(x.ColumnCnName))
+                {
+                    x.ColumnCnName = x.ColumnCnName.Trim().Replace("\r\n", "");
+                }
+                if (!string.IsNullOrEmpty(x.ColumnName))
+                {
+                    x.ColumnName = x.ColumnName.Trim().Replace("\r\n", "");
+                }
             });
-            return repository.UpdateRange<Sys_TableColumn>(sysTableInfo, true, true, null, null, true);
+            var res = repository.UpdateRange<Sys_TableColumn>(sysTableInfo, true, true, null, null, true);
+            //刷新缓存
+            TableColumnContext.Reload();
+            return res;
         }
 
         /// <summary>
@@ -437,30 +442,34 @@ DISTINCT
         /// </summary>
         /// <param name="tableName"></param>
         /// <returns></returns>
-        private string GetCurrentSql(string tableName)
+        private string GetCurrentSql(string tableName, string connection, string dbService)
         {
             string sql;
-            if (DBType.Name.ToLower() == DbCurrentType.MySql.ToString().ToLower())
+            string dbType = DBType.Name.ToLower();
+            if (dbType == DbCurrentType.MySql.ToString().ToLower())
             {
-                sql = GetMySqlStructure(tableName);
+                sql = GetMySqlStructure(tableName, connection);
             }
-            else if (DBType.Name.ToLower() == DbCurrentType.PgSql.ToString().ToLower())
+            else if (dbType == DbCurrentType.PgSql.ToString().ToLower())
             {
                 sql = GetPgSqlStructure(tableName);
             }
-            else if (DBType.Name.ToLower() == DbCurrentType.DM.ToString().ToLower())
-            {
-                sql = GetDMStructure(tableName);
-            }
-            else if (DBType.Name.ToLower() == DbCurrentType.Oracle.ToString().ToLower())
-            {
-                sql = GetOracleStructure(tableName);
-            }
-            else
+            else if (dbType == DbCurrentType.MsSql.ToString().ToLower())
             {
                 sql = GetSqlServerStructure(tableName);
             }
+            else
+            {
+                sql = GetOracleStructure(tableName);
+            }
             return sql;
+        }
+
+        private string GetConnectionKey(Sys_TableInfo tableInfo)
+        {
+            string db = DBType.Name;
+
+            return db;
         }
 
         /// <summary>
@@ -481,14 +490,19 @@ DISTINCT
             {
                 tableName = tableInfo.TableTrueName;
             }
-
-            string sql = GetCurrentSql(tableName);
+            string connection = GetConnectionKey(tableInfo);
+            string sql = GetCurrentSql(tableName, connection, DBType.Name);
 
             //获取表结构
-            List<Sys_TableColumn> columns = repository.DapperContext
-                  .QueryList<Sys_TableColumn>(sql, new { tableName });
-            if (columns == null || columns.Count == 0)
-                return webResponse.Error("未获取到【" + tableName + "】表结构信息，请确认表是否存在");
+            //List<Sys_TableColumn> columns = DBServerProvider.GetSqlDapper(connection) // repository.DapperContext.get
+            //      .QueryList<Sys_TableColumn>(sql, new { tableName });
+            //2024.06.20增加获取指定数据库与指定数据库类型
+            List<Sys_TableColumn> columns = repository
+                .QueryList<Sys_TableColumn>(GetCurrentSql(tableName, connection, DBType.Name), new { tableName });
+
+
+            //if (columns == null || columns.Count == 0)
+            //    return webResponse.Error("未获取到【" + tableName + "】表结构信息，请确认表是否存在");
 
 
             //获取现在配置好的表结构
@@ -497,13 +511,14 @@ DISTINCT
             List<Sys_TableColumn> updateColumns = new List<Sys_TableColumn>();
             foreach (Sys_TableColumn item in columns)
             {
-                Sys_TableColumn tableColumn = detailList.Where(x => x.ColumnName == item.ColumnName)
+                Sys_TableColumn tableColumn = detailList.Where(x => x.ColumnName.ToLower() == item.ColumnName.ToLower())
                     .FirstOrDefault();
                 //新加的列
                 if (tableColumn == null)
                 {
                     item.TableName = tableInfo.TableName;
                     item.Table_Id = tableInfo.Table_Id;
+                    item.EditRowNo = 0;
                     addColumns.Add(item);
                     continue;
                 }
@@ -517,7 +532,7 @@ DISTINCT
                 }
             }
             //删除的列
-            List<Sys_TableColumn> delColumns = detailList.Where(a => !columns.Select(c => c.ColumnName).Contains(a.ColumnName)).ToList();
+            List<Sys_TableColumn> delColumns = detailList.Where(a => !columns.Select(c => c.ColumnName.ToLower()).Contains(a.ColumnName.ToLower())).ToList();
             if (addColumns.Count + delColumns.Count + updateColumns.Count == 0)
             {
                 return webResponse.Error("【" + tableName + "】表结构未发生变化");
@@ -562,27 +577,45 @@ DISTINCT
 
             if (apiController)
             {
-                string apiPath = ProjectPath.GetProjectDirectoryInfo().GetDirectories().Where(x => x.Name.ToLower().EndsWith(".webapi")).FirstOrDefault()?.FullName;
+                string apiPath = null;
+                apiPath = ProjectPath.GetProjectDirectoryInfo().GetDirectories().Where(x => x.Name.ToLower().EndsWith(".webapi")).FirstOrDefault()?.FullName;
+
                 if (string.IsNullOrEmpty(apiPath))
                 {
                     return "未找到webapi类库,请确认是存在weiapi类库命名以.webapi结尾";
                 }
                 apiPath += $"\\Controllers\\{projectName}\\";
-                //生成Partial Api控制器
-                if (!FileHelper.FileExists($"{apiPath}Partial\\{tableName}Controller.cs"))
+
+                string partialController = FileHelper.ReadFile(@"Template\\Controller\\ControllerApiPartial.html")
+                      .Replace("{Namespace}", nameSpace).Replace("{TableName}", tableName).Replace("{StartName}", StratName);
+                //新生成的默认生成在控制器设置的文件夹下 
+                string controllerFolderName = "";
+                string path1 = $"{apiPath}Partial\\{tableName}Controller.cs".ReplacePath();
+                string path2 = $"{apiPath}\\{foldername}\\Partial\\{tableName}Controller.cs".ReplacePath();
+                //第一次生成或者生成过到当前文件夹的
+                if (AppSetting.GetSettingString("GenControllerToDir") == "1" &&
+                    ((!File.Exists(path1) && !File.Exists(path2)) || File.Exists(path2)))
                 {
-                    string partialController = FileHelper.ReadFile(@"Template\\Controller\\ControllerApiPartial.html")
-                       .Replace("{Namespace}", nameSpace).Replace("{TableName}", tableName).Replace("{StartName}", StratName);
+                    if (!File.Exists(path2))
+                    {
+                        FileHelper.WriteFile($"{apiPath}\\{foldername}\\Partial\\", tableName + "Controller.cs", partialController);
+                    }
+                    controllerFolderName = "\\" + foldername + "\\";
+                }
+                //生成Partial Api控制器
+                else if (!File.Exists(path1))
+                {
                     FileHelper.WriteFile($"{apiPath}Partial\\", tableName + "Controller.cs", partialController);
                 }
                 //生成Api控制器
                 domainContent = FileHelper.ReadFile(@"Template\\Controller\\ControllerApi.html")
                     .Replace("{Namespace}", nameSpace).Replace("{TableName}", tableName).Replace("{StartName}", StratName).Replace("{BaseOptions}", baseOptions);
-                FileHelper.WriteFile(apiPath, tableName + "Controller.cs", domainContent);
+                FileHelper.WriteFile(apiPath + controllerFolderName, tableName + "Controller.cs", domainContent);
             }
 
             //生成Repository类
             domainContent = FileHelper.ReadFile("Template\\Repositorys\\BaseRepository.html").Replace("{Namespace}", nameSpace).Replace("{TableName}", tableName).Replace("{StartName}", StratName);
+
             FileHelper.WriteFile(
            frameworkFolder + string.Format("\\{0}\\Repositories\\{1}\\", nameSpace, foldername)
                           , tableName + "Repository.cs", domainContent);
@@ -598,7 +631,7 @@ DISTINCT
             string fileName = "I" + tableName + "Service.cs";
 
             //生成Partial  IService类
-            if (!FileHelper.FileExists(path + "Partial\\" + fileName))
+            if (!File.Exists((path + "Partial\\" + fileName).ReplacePath()))
             {
                 domainContent = FileHelper.ReadFile("Template\\IServices\\IServiceBasePartial.html").Replace("{Namespace}", nameSpace).Replace("{TableName}", tableName).Replace("{StartName}", StratName);
                 FileHelper.WriteFile(path + "Partial\\", fileName, domainContent);
@@ -613,7 +646,7 @@ DISTINCT
             fileName = tableName + "Service.cs";
             //生成Partial Service类
             domainContent = FileHelper.ReadFile("Template\\Services\\ServiceBasePartial.html").Replace("{Namespace}", nameSpace).Replace("{TableName}", tableName).Replace("{StartName}", StratName);
-            if (!FileHelper.FileExists(path + "Partial\\" + fileName))
+            if (!File.Exists((path + "Partial\\" + fileName).ReplacePath()))
             {
                 domainContent = FileHelper.ReadFile("Template\\Services\\ServiceBasePartial.html").Replace("{Namespace}", nameSpace).Replace("{TableName}", tableName).Replace("{StartName}", StratName);
                 FileHelper.WriteFile(path + "Partial\\", fileName, domainContent);
@@ -631,7 +664,7 @@ DISTINCT
                 path = $"{frameworkFolder}\\{nameSpace}\\Controllers\\{foldername}\\";
                 fileName = tableName + "Controller.cs";
                 //生成Partial web控制器
-                if (!FileHelper.FileExists(path + "Partial\\" + fileName))
+                if (!File.Exists((path + "Partial\\" + fileName).ReplacePath()))
                 {
                     domainContent = FileHelper.ReadFile("Template\\Controller\\ControllerPartial.html").Replace("{Namespace}", nameSpace).Replace("{TableName}", tableName).Replace("{BaseOptions}", baseOptions).Replace("{StartName}", StratName);
                     FileHelper.WriteFile(path + "Partial\\", tableName + "Controller.cs", domainContent);
@@ -700,11 +733,32 @@ DISTINCT
                         keyValues.Add("field", s.id);
                         if (s.disabled)
                         {
-                            keyValues.Add("disabled", true);
+                            //编辑只读
+                            if (s.readonlyType == 2)
+                            {
+                                keyValues.Add("readonlyUpdate", true);
+                            }
+                            else if (s.readonlyType == 3)//新建时只读
+                            {
+                                keyValues.Add("readonlyAdd", true);
+                            }
+                            else
+                            {
+                                keyValues.Add("readonly", true);
+                            }
+
+                        }
+                        if (!string.IsNullOrEmpty(s.addDefaultValue))
+                        {
+                            keyValues.Add("addDefaultValue", s.addDefaultValue);
                         }
                         if (s.colSize > 0 && !app)
                         {
                             keyValues.Add("colSize", s.colSize);
+                        }
+                        if (!string.IsNullOrEmpty(s.placeholder))
+                        {
+                            keyValues.Add("placeholder", s.placeholder);
                         }
                         if (!string.IsNullOrEmpty(s.displayType) && s.displayType != "''")
                         {
@@ -756,8 +810,17 @@ DISTINCT
         /// <param name="sysTableInfo"></param>
         /// <param name="vuePath">为本地Vue项目Views所在的绝对路径:E:/web/myProject/Views</param>
         /// <returns></returns>
-        public string CreateVuePage(Sys_TableInfo sysTableInfo, string vuePath)
+        public string CreateVuePage(Sys_TableInfo sysTableInfo, string vuePath, int tableId, string table)
         {
+            bool loadScript = false;
+            if (tableId > 0 || !string.IsNullOrEmpty(table))
+            {
+                vuePath = "vuePath";
+                sysTableInfo = repository.WhereIF(tableId > 0, x => x.Table_Id == tableId)
+                    .WhereIF(!string.IsNullOrEmpty(table), x => x.TableName == table)
+                    .Include(x => x.TableColumns).FirstOrDefault();
+                loadScript = true;
+            }
             //2024.03.16增加vite代码生成
             bool isVite = HttpContext.Current.Request.Query["vite"].GetInt() > 0;
             bool isApp = HttpContext.Current.Request.Query["app"].GetInt() > 0;
@@ -766,8 +829,18 @@ DISTINCT
                 return isApp ? "请设置App路径" : "请设置Vue所在Views的绝对路径!";
             }
 
-            if (!FileHelper.DirectoryExists(vuePath)) return $"未找项目路径{vuePath}!";
-
+            if (!loadScript && !FileHelper.DirectoryExists(vuePath)) return $"未找项目路径{vuePath}!";
+            if (loadScript)
+            {
+                if (sysTableInfo == null)
+                {
+                    return "未获取到配置信息";
+                }
+                if (sysTableInfo.TableColumns?.Count == 0)
+                {
+                    return "当前表没有字段信息";
+                }
+            }
             if (sysTableInfo == null
               || sysTableInfo.TableColumns == null
               || sysTableInfo.TableColumns.Count == 0)
@@ -794,7 +867,7 @@ DISTINCT
             if (sb.Length == 0) return "未获取到数据!";
             string columns = sb.ToString().Trim();
             columns = columns.Substring(0, columns.Length - 1);
-            string key = sysColumnList.Where(c => c.IsKey == 1).Select(x => x.ColumnName).First() ?? "";
+            string key = sysColumnList.Where(c => c.IsKey == 1).Select(x => x.ColumnName).FirstOrDefault() ?? "";
 
             //{ key: 1, value: "显示/查询/编辑" },
             //{ key: 2, value: "显示/编辑" },
@@ -826,19 +899,13 @@ DISTINCT
             {
                 pageContent = FileHelper.ReadFile("Template\\Page\\app\\options.html");
             }
-            else if (HttpContext.Current.Request.Query.ContainsKey("v3"))   //2021.08.01增加vue3页面模板
+            else
             {
                 pageContent = FileHelper.ReadFile("Template\\Page\\Vue3SearchPage.html");
                 editOptions = FileHelper.ReadFile("Template\\Page\\EditOptions.html");
                 //2025.02
                 vueOptions = FileHelper.ReadFile("Template\\Page\\VueOptions.html");
             }
-            else
-            {
-                pageContent = FileHelper.ReadFile("Template\\Page\\VueSearchPage.html");
-            }
-
-
             if (string.IsNullOrEmpty(pageContent))
             {
                 return "未找到Template模板文件";
@@ -872,7 +939,7 @@ DISTINCT
             //编辑
             string formOptions = GetSearchData(panelHtml, sysColumnList.Where(editFunc).ToList(), true, true, app: isApp).Serialize() ?? "";
 
-            string[] arr = sysTableInfo.Namespace.Split(".");
+            string[] arr = (sysTableInfo.Namespace ?? "").Split(".");
             string spaceFolder = (arr.Length > 1 ? arr[arr.Length - 1] : arr[0]).ToLower();
             //2025.02
             if (editLine)
@@ -881,6 +948,7 @@ DISTINCT
             }
             //2025.02
             vueOptions = vueOptions.Replace("#columns", columns).
+                            Replace("\"#SortName\"", "'#SortName'").
                             Replace("#SortName", string.IsNullOrEmpty(sysTableInfo.SortName) ? key : sysTableInfo.SortName).
                             Replace("#key", key).
                             Replace("#Foots", " ").
@@ -953,22 +1021,7 @@ DISTINCT
                     var _name = detailTable.TableColumns.Where(x => x.IsImage < 4 && x.EditRowNo > 0).Select(s => s.ColumnName).FirstOrDefault();
 
                     string detailItem = null;
-                    //  if (detailTables.Count > 0)
-                    if (hasSubDetail)
-                    {
-                        detailItem = @"  { 
-                    cnName: '#detailCnName',
-                    table: '#detailTable',
-                    columns: [#detailColumns],
-                    sortName: '#detailSortName',
-                    key: '#detailKey',
-                    buttons:[],
-                    delKeys:[],
-                    detail:null
-                                            }";
-                    }
-                    else
-                    {
+                   
                         detailItem = @"  {
                     cnName: '#detailCnName',
                     table: '#detailTable',
@@ -976,42 +1029,36 @@ DISTINCT
                     sortName: '#detailSortName',
                     key: '#detailKey'
                                             }";
-                    }
                     //明细列数据
                     List<Sys_TableColumn> detailList = detailTable.TableColumns;
                     //替换明细列数据
                     sb = GetGridColumns(detailList, detailTable.ExpressField, true, true);
-                    key = detailList.Where(c => c.IsKey == 1).Select(x => x.ColumnName).First();
+                    key = detailList.Where(c => c.IsKey == 1).Select(x => x.ColumnName).FirstOrDefault();
                     columns = sb.ToString().Trim();
                     columns = columns.Substring(0, columns.Length - 1);
+
+                    string foreignKey = repository.FindAsIQueryable(x => x.TableName == detailTable.TableName)
+                        .Select(s => s.MainKeyField).FirstOrDefault();
+
                     detailItem = detailItem.Replace("#detailColumns", columns).
                         Replace("#detailCnName", tableCNName).// detailTable.ColumnCNName).
-                        Replace("#detailTable", detailTable.TableName).
-                        Replace("#detailKey", detailTable.TableColumns.Where(c => c.IsKey == 1).Select(x => x.ColumnName).First()).
+                        Replace("#detailTable", $"{detailTable.TableName}',mainKeyField:'{foreignKey ?? ""}").
+                        Replace("#detailKey", detailTable.TableColumns.Where(c => c.IsKey == 1).Select(x => x.ColumnName).FirstOrDefault()).
                         Replace("#detailSortName", string.IsNullOrEmpty(detailTable.SortName) ? key : detailTable.SortName);
+
+
 
                     detailItems.Add(detailItem);
-                    //2025.02
-                    if (detailTables.Count == 1)
-                    {
-                        editOptions = editOptions.Replace("#detailColumns", columns).
-                        Replace("#detailCnName", detailTable.ColumnCNName).
-                        Replace("#detailTable", detailTable.TableName).
-                        Replace("#detailKey", detailTable.TableColumns.Where(c => c.IsKey == 1).Select(x => x.ColumnName).First()).
-                        Replace("#detailSortName", string.IsNullOrEmpty(detailTable.SortName) ? key : detailTable.SortName);
-                    }
 
                 }
-                //2025.02
-                vueOptions = vueOptions.Replace("#tables1", $"{detailItems[0]}");
-                vueOptions = vueOptions.Replace("#tables2", "[]");
+                    //2025.02
+                    vueOptions = vueOptions.Replace("#tables1", $"{detailItems[0]}");
+                    vueOptions = vueOptions.Replace("#tables2", "[]");
             }
             else
             {
-                //2025.02
                 vueOptions = vueOptions.Replace("#tables1", "{columns:[]}");
                 vueOptions = vueOptions.Replace("#tables2", "[]");
-                //2025.02
                 vueOptions = vueOptions.Replace("#detailColumns", "")
                     .Replace("#detailKey", "")
                     .Replace("#detailSortName", "");
@@ -1038,8 +1085,8 @@ DISTINCT
             //2024.03.16增加vite版本生成jsx文件
             string exFileName = sysTableInfo.TableName + ".js" + (isVite ? "x" : "");
             string tableName = sysTableInfo.TableName;
-
-            if (!isApp)
+            sysTableInfo.FolderName = sysTableInfo.FolderName ?? "";
+            if (!isApp && !loadScript)
             {
                 if (!FileHelper.FileExists(extensionPath + exFileName)
                     || FileHelper.FileExists($"{extensionPath}+\\{sysTableInfo.FolderName.ToLower()}\\{exFileName}"))
@@ -1052,7 +1099,9 @@ DISTINCT
                     pageContent = pageContent.Replace("#folder", spaceFolder.Replace("\\", "/"));
                 }
             }
-            if (!isApp && !FileHelper.FileExists(extensionPath + exFileName))
+
+
+            if (!loadScript && !isApp && !FileHelper.FileExists((extensionPath + exFileName).ReplacePath()))
             {
 
                 string exContent = FileHelper.ReadFile("Template\\Page\\VueExtension.html");
@@ -1066,7 +1115,15 @@ DISTINCT
             {
                 pageContent = vueOptions;
                 pageContent = pageContent.Replace("#TableName", tableName);
+                //if (!FileHelper.FileExists($"{vuePath}\\{spaceFolder}\\{sysTableInfo.TableName}\\{sysTableInfo.TableName}Extend.js"))
+                //{
+                //    //生成扩展文件
+                //    string pageContentEx = FileHelper.ReadFile("Template\\Page\\app\\extension.html");
+                //    pageContentEx = pageContentEx.Replace("#TableName", sysTableInfo.TableName);
+                //    FileHelper.WriteFile($"{vuePath}\\{spaceFolder}\\{sysTableInfo.TableName}\\", sysTableInfo.TableName + "Extend.js", pageContentEx);
+                //}
                 pageContent = pageContent.Replace("#titleField", sysTableInfo.ExpressField).Replace("{#table}", sysTableInfo.TableName);
+
                 //生成app配置options.js文件
                 FileHelper.WriteFile($"{vuePath}\\{spaceFolder}\\{sysTableInfo.TableName}\\", sysTableInfo.TableName + "Options.js", pageContent);
 
@@ -1126,22 +1183,31 @@ DISTINCT
             }
             else
             {
-                //   spaceFolder = spaceFolder; //+ "\\" + sysTableInfo.FolderName.ToLower();
-                //生成vue页面
-                //2024.03.16增加vite版本生成jsx文件
-                if (isVite && !pageContent.Contains(sysTableInfo.TableName + ".jsx"))
+                if (!loadScript)
                 {
-                    pageContent = pageContent.Replace(sysTableInfo.TableName + ".js", sysTableInfo.TableName + ".jsx");
-                }
-                pageContent = pageContent.Replace(".jsxx", ".jsx");
-                string valuePath = $"{vuePath}\\{spaceFolder}\\{sysTableInfo.TableName}.vue";
-                //生成vue页面2025.02
-                if (!FileHelper.FileExists(valuePath) || FileHelper.ReadFile(valuePath).Contains("setup()"))
-                {
-                    pageContent = pageContent.Replace("#folder", spaceFolder.Replace("\\", "/"));
-                    FileHelper.WriteFile($"{vuePath}\\{spaceFolder}\\", sysTableInfo.TableName + ".vue", pageContent);
+                    //   spaceFolder = spaceFolder; //+ "\\" + sysTableInfo.FolderName.ToLower();
+                    //生成vue页面
+                    pageContent = pageContent.Replace("{$false}",  "false");
+                    //2024.03.16增加vite版本生成jsx文件
+                    if (isVite && !pageContent.Contains(sysTableInfo.TableName + ".jsx"))
+                    {
+                        pageContent = pageContent.Replace(sysTableInfo.TableName + ".js", sysTableInfo.TableName + ".jsx");
+                    }
+                    pageContent = pageContent.Replace(".jsxx", ".jsx");
+                    string valuePath = $"{vuePath}\\{spaceFolder}\\{sysTableInfo.TableName}.vue";
+                    //生成vue页面2025.02
+                    if (!FileHelper.FileExists(valuePath.ReplacePath()) || FileHelper.ReadFile(valuePath.ReplacePath()).Contains("setup()"))
+                    {
+                        pageContent = pageContent.Replace("#folder", spaceFolder.Replace("\\", "/"));
+                        FileHelper.WriteFile($"{vuePath}\\{spaceFolder}\\", sysTableInfo.TableName + ".vue", pageContent);
+                    }
                 }
                 //生成配置2025.02
+                vueOptions = vueOptions.Replace("{$false}", "false")
+                    .Replace("{fixedSearch}", sysTableInfo.FixedSearch == 1 ? "true" : "false")
+                    .Replace("{#showFooterDetail}", sysTableInfo.ShowDetail == 1 ? "true" : "false")
+                    .Replace("{#quickQueryFields}", string.IsNullOrEmpty(sysTableInfo.QuickQueryFields) ? "" : sysTableInfo.QuickQueryFields);
+
                 if (hasSubDetail)
                 {
                     vueOptions = vueOptions.Replace("#tables2", $"[{string.Join(",\r                  ", detailItems)}]");
@@ -1154,9 +1220,13 @@ DISTINCT
                 }
                 //2025.02
                 vueOptions = vueOptions.Replace("[[]]", "[]");
-                //配置文件2025.02
-                FileHelper.WriteFile($"{vuePath}\\{spaceFolder}\\{sysTableInfo.TableName}\\", "options.js", vueOptions);
 
+                //动态加载配置2025.08.13
+                if (loadScript)
+                {
+                    return vueOptions;
+                }
+                FileHelper.WriteFile($"{vuePath}\\{spaceFolder}\\{sysTableInfo.TableName}\\", "options.js", vueOptions);
 
                 //生成路由
                 string routerPath = $"{srcPath}\\router\\viewGird.js";
@@ -1173,7 +1243,6 @@ DISTINCT
             return "页面创建成功!";
         }
 
-
         /// <summary>
         /// 
         /// </summary>
@@ -1189,7 +1258,7 @@ DISTINCT
         /// </summary>
         /// <param name="tableName"></param>
         /// <returns></returns>
-        private string GetMySqlStructure(string tableName)
+        private string GetMySqlStructure(string tableName, string connection)
         {
             return $@"SELECT  DISTINCT
                     Column_Name AS ColumnName,
@@ -1199,13 +1268,14 @@ DISTINCT
                           WHEN data_type IN( 'BIT', 'BOOL', 'bit', 'bool') THEN
                 'bool'
 		             WHEN data_type in('smallint','SMALLINT') THEN 'short'
-								WHEN data_type in('tinyint','TINYINT') THEN 'sbyte'
+								WHEN data_type in('tinyint','TINYINT') THEN 'byte'
                         WHEN data_type IN('MEDIUMINT','mediumint', 'int','INT','year', 'Year') THEN
                     'int'
                     WHEN data_type in ( 'BIGINT','bigint') THEN
                     'bigint'
                     WHEN data_type IN('FLOAT', 'DOUBLE', 'DECIMAL','float', 'double', 'decimal') THEN
                     'decimal'
+                    WHEN data_type IN('time') THEN  'time'
                     WHEN data_type IN('CHAR', 'VARCHAR', 'TINY TEXT', 'TEXT', 'MEDIUMTEXT', 'LONGTEXT', 'TINYBLOB', 'BLOB', 'MEDIUMBLOB', 'LONGBLOB', 'Time','char', 'varchar', 'tiny text', 'text', 'mediumtext', 'longtext', 'tinyblob', 'blob', 'mediumblob', 'longblob', 'time') THEN
                     'string'
                     WHEN data_type IN('Date', 'DateTime', 'TimeStamp','date', 'datetime', 'timestamp') THEN
@@ -1225,7 +1295,7 @@ DISTINCT
                     120 AS ColumnWidth,
                     0 AS OrderNo,
                 CASE
-                        WHEN IS_NULLABLE = 'N' or IS_NULLABLE = 'NO' THEN
+                        WHEN IS_NULLABLE = 'NO' or IS_NULLABLE = 'N' THEN
                         0 ELSE 1
                     END AS IsNull,
 	            CASE
@@ -1236,194 +1306,147 @@ DISTINCT
                 FROM
                     information_schema.COLUMNS
                 WHERE
-                    table_name = ?tableName {GetMysqlTableSchema()}
+                    table_name = ?tableName {GetMysqlTableSchema(connection)}
                order by ordinal_position";
         }
-        /// <summary>
-        /// 获取tOracle表结构信息 2023.11.14
-        /// </summary>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
-        private string GetOracleStructure(string tableName)
-        {
-            return $@"SELECT
-			c.TABLE_NAME TableName ,
-			cc.COLUMN_NAME COLUMNNAME,
-			cc.COMMENTS  as  ColumnCNName,
-		    CASE WHEN   c.DATA_TYPE IN('smallint', 'INT') or (c.DATA_TYPE='NUMBER' and c.DATA_LENGTH=0)   THEN 'int'  
-           WHEN  c.DATA_TYPE IN('NUMBER') THEN 'decimal'  
-			WHEN c.DATA_TYPE IN('CHAR', 'VARCHAR', 'NVARCHAR','VARCHAR2', 'NVARCHAR2','text', 'image')
-			THEN 'string'
-		  WHEN  c.DATA_TYPE IN('DATE') THEN 'DateTime'  
-			ELSE 'string' 
-			end    as ColumnType,
-			c.DATA_LENGTH  as Maxlength,
-			case WHEN 	c.NULLABLE='Y' THEN 1 ELSE 0 end   as ISNULL,
-			1 IsColumnData,1 IsDisplay
-			FROM
-			user_tab_columns c
-			LEFT JOIN   user_col_comments cc ON c.table_name = cc.table_name 
-			AND c.column_name = cc.column_name
-			LEFT JOIN   user_tab_comments t ON c.table_name = t.table_name 
-	
-                WHERE
-                -- 	c.OWNER = 'NETCOREDEV' 
-                -- 	AND
-                c.table_name='{tableName.ToUpper()}'";
-        }
-        /// <summary>
-        /// 获取达梦表结构信息 2023.11.14
-        /// </summary>
-        /// <param name="tableName"></param>
-        /// <param name="dbService"></param>
-        /// <returns></returns>
-        private string GetDMStructure(string tableName)
-        {
-            return $@"SELECT  DISTINCT
-                    tc.COLUMN_NAME AS ColumnName,
-                     '{tableName}'  as tableName,
-	                IFNULL(col.COMMENTS,'') AS ColumnCnName,
-                        CASE
-                          WHEN data_type IN( 'BIT', 'BOOL', 'bit', 'bool') THEN
-                'bool'
-		             WHEN data_type in('smallint','SMALLINT') THEN 'short'
-								WHEN data_type in('tinyint','TINYINT') THEN 'sbyte'
-                        WHEN data_type IN('MEDIUMINT','mediumint', 'int','INT','year', 'Year') THEN
-                    'int'
-                    WHEN data_type in ( 'BIGINT','bigint') THEN
-                    'bigint'
-                    WHEN data_type IN('FLOAT', 'DOUBLE', 'DECIMAL','float', 'double', 'decimal') THEN
-                    'decimal'
-                    WHEN data_type IN('CHAR', 'VARCHAR', 'TINY TEXT', 'TEXT', 'MEDIUMTEXT', 'LONGTEXT', 'TINYBLOB', 'BLOB', 'MEDIUMBLOB', 'LONGBLOB', 'Time','char', 'varchar', 'tiny text', 'text', 'mediumtext', 'longtext', 'tinyblob', 'blob', 'mediumblob', 'longblob', 'time') THEN
-                    'string'
-                    WHEN data_type IN('Date', 'DateTime', 'TimeStamp','date', 'datetime', 'timestamp') THEN
-                    'DateTime' ELSE 'string'
-                END AS ColumnType,
-	              case WHEN DATA_LENGTH>8000 THEN 0 ELSE DATA_LENGTH end  AS Maxlength,
-            CASE
-                    WHEN c.constraint_type='P' THEN  
-                    1 ELSE 0
-                END AS IsKey,
-            CASE
-                    WHEN tc.Column_Name IN( 'CreateID', 'ModifyID', '' ) 
-		            OR c.constraint_type='P' THEN
-                        0 ELSE 1
-                        END AS IsDisplay,
-		            1 AS IsColumnData,
-                    120 AS ColumnWidth,
-                    0 AS OrderNo,
-                CASE
-                        WHEN NULLABLE = 'NO' THEN
-                        0 ELSE 1
-                    END AS IsNull,
-	            CASE
-                        WHEN c.constraint_type='P' THEN
-                        1 ELSE 0
-                    END AS IsReadDataset
-                FROM
-                    user_tab_columns tc
-                INNER JOIN dba_tables t ON tc.TABLE_NAME=t.TABLE_NAME
-                LEFT JOIN dba_cons_columns cons ON tc.COLUMN_NAME=cons.COLUMN_NAME AND tc.TABLE_NAME=cons.TABLE_NAME
-                LEFT JOIN dba_constraints c ON c.constraint_name=cons.constraint_name
-                LEFT JOIN user_col_comments col ON  tc.TABLE_NAME=col.TABLE_NAME AND tc.COLUMN_NAME=col.COLUMN_NAME 
-
-                WHERE  tc.table_name = :tableName AND t.OWNER='{GetDMOwner()}'";
-        }
 
         /// <summary>
-        /// 获取SqlServer表结构信息
+        /// 获取SqlServer表结构信息，字段说明从系统数据库B23HZCMYSSYS取
         /// </summary>
         /// <param name="tableName"></param>
         /// <returns></returns>
         private string GetSqlServerStructure(string tableName)
         {
             return $@"
-            SELECT TableName,
-                LTRIM(RTRIM(ColumnName)) AS ColumnName,
-                ColumnCNName,
-                CASE WHEN ColumnType = 'uniqueidentifier' THEN 'guid'
-                     WHEN ColumnType IN('smallint', 'INT') THEN 'int'
-                     WHEN ColumnType = 'BIGINT' THEN 'long'
-                     WHEN ColumnType IN('CHAR', 'VARCHAR', 'NVARCHAR',
-                                          'text', 'xml', 'varbinary', 'image')
-                     THEN 'string'
-                     WHEN ColumnType IN('tinyint')
-                     THEN 'byte'
-
-                       WHEN ColumnType IN('bit') THEN 'bool'
-                     WHEN ColumnType IN('time', 'date', 'DATETIME', 'smallDATETIME')
-                     THEN 'DateTime'
-                     WHEN ColumnType IN('smallmoney', 'DECIMAL', 'numeric',
-                                          'money') THEN 'decimal'
-                     WHEN ColumnType = 'float' THEN 'float'
-                     ELSE 'string '
-                END ColumnType,
-                CASE WHEN   ColumnType IN ('NVARCHAR','NCHAR') THEN [Maxlength]/2 ELSE [Maxlength] END  [Maxlength],
-                IsKey,
-                CASE WHEN ColumnName IN('CreateID', 'ModifyID', '')
-                          OR IsKey = 1 THEN 0
-                     ELSE 1
-                END AS IsDisplay ,
-				1 AS IsColumnData,
-
-              CASE   WHEN ColumnType IN('time', 'date', 'DATETIME', 'smallDATETIME') THEN 150
-
-                     WHEN ColumnName IN('Modifier', 'Creator') THEN 130
-
-                     WHEN ColumnType IN('int', 'bigint') OR ColumnName IN('CreateID', 'ModifyID', '') THEN 80
-                     WHEN[Maxlength] < 110 AND[Maxlength] > 60 THEN 120
-
-                     WHEN[Maxlength] < 200 AND[Maxlength] >= 110 THEN 180
-
-                     WHEN[Maxlength] > 200 THEN 220
-                     ELSE 110
-                   END AS ColumnWidth ,
-                0 AS OrderNo,
-                --CASE WHEN IsKey = 1 OR t.[IsNull]=0 THEN 0
-                --     ELSE 1 END
-                t.[IsNull] AS
-                 [IsNull],
-            CASE WHEN IsKey = 1 THEN 1 ELSE 0 END IsReadDataset,
-            CASE WHEN IsKey!=1 AND t.[IsNull] = 0 THEN 0 ELSE NULL END AS EditColNo
-        FROM    (SELECT obj.name AS TableName ,
-                            col.name AS ColumnName ,
-                            CONVERT(NVARCHAR(100),ISNULL(ep.[value], '')) AS ColumnCNName,
-                            t.name AS ColumnType ,
-                           CASE WHEN  col.length<1 THEN 0 ELSE  col.length END  AS[Maxlength],
-                            CASE WHEN EXISTS (SELECT   1
-                                               FROM dbo.sysindexes si
-                                                        INNER JOIN dbo.sysindexkeys sik ON si.id = sik.id
-                                                              AND si.indid = sik.indid
-                                                        INNER JOIN dbo.syscolumns sc ON sc.id = sik.id
-                                                              AND sc.colid = sik.colid
-                                                        INNER JOIN dbo.sysobjects so ON so.name = si.name
-                                                              AND so.xtype = 'PK'
-                                               WHERE sc.id = col.id
-                                                        AND sc.colid = col.colid)
-                                 THEN 1
-                                 ELSE 0
-                            END AS IsKey ,
-                            CASE WHEN col.isnullable = 1 THEN 1
-                                 ELSE 0
-                            END AS[IsNull],
-                            col.colorder
-                  FROM      dbo.syscolumns col
-                            LEFT JOIN dbo.systypes t ON col.xtype = t.xusertype
-                           INNER JOIN dbo.sysobjects obj ON col.id = obj.id
-
-                                                            AND obj.xtype IN ( 'U','V')
-                                                          --   AND obj.status >= 01
+                SELECT
+                    t.TableName,
+                    LTRIM( RTRIM( t.ColumnName ) ) AS ColumnName,
+                    t.ColumnCNName,
+                CASE
+                        
+                        WHEN t.ColumnType = 'uniqueidentifier' THEN
+                        'guid' 
+                        WHEN t.ColumnType IN ( 'smallint', 'int' ) THEN
+                        'int' 
+                        WHEN t.ColumnType = 'bigint' THEN
+                        'long' 
+                        WHEN t.ColumnType IN ( 'char', 'varchar', 'nvarchar', 'text', 'xml', 'varbinary', 'image' ) THEN
+                        'string' 
+                        WHEN t.ColumnType IN ( 'tinyint' ) THEN
+                        'byte' 
+                        WHEN t.ColumnType IN ( 'bit' ) THEN
+                        'bool' 
+                        WHEN t.ColumnType IN ( 'time') THEN
+                        'time' 
+                        WHEN t.ColumnType IN ( 'time', 'date', 'datetime', 'datetime2', 'smalldatetime' ) THEN
+                        'DateTime' 
+                        WHEN t.ColumnType IN ( 'smallmoney', 'decimal', 'numeric', 'money','real' ) THEN
+                        'decimal' 
+                        WHEN t.ColumnType = 'float' THEN
+                        'float' ELSE 'string ' 
+                    END ColumnType,
+                CASE
+                    
+                    WHEN t.ColumnType IN ( 'nvarchar', 'nchar' ) THEN
+                    t.[Maxlength]/2 ELSE t.[Maxlength] 
+                    END [Maxlength],
+                    t.IsKey,
+                CASE
+                    
+                    WHEN t.ColumnName IN ( 'CreateID', 'ModifyID', '' ) 
+                    OR t.IsKey = 1 THEN
+                    0 ELSE 1 
+                    END AS IsDisplay,
+                    1 AS IsColumnData,
+                CASE
+                        
+                        WHEN t.ColumnType IN ( 'time', 'date', 'datetime', 'smalldatetime' ) THEN
+                        150 
+                        WHEN t.ColumnName IN ( 'Modifier', 'Creator' ) THEN
+                        100 
+                        WHEN t.ColumnType IN ( 'int', 'bigint' ) 
+                        OR t.ColumnName IN ( 'CreateID', 'ModifyID', '' ) THEN
+                            80 
+                            WHEN t.[Maxlength] < 110 
+                            AND t.[Maxlength] > 60 THEN
+                                120 
+                                WHEN t.[Maxlength] < 200 
+                                AND t.[Maxlength] >= 110 THEN
+                                    180 
+                                    WHEN t.[Maxlength] > 200 THEN
+                                    220 ELSE 110 
+                                END AS ColumnWidth,
+                                0 AS OrderNo,
+                                t.[IsNull],
+                            CASE
+                                    
+                                    WHEN t.IsKey = 1 THEN
+                                    1 ELSE 0 
+                                END IsReadDataset,
+                CASE
+                    
+                    WHEN t.IsKey!= 1 
+                    AND t.[IsNull] = 0 THEN
+                    0 ELSE NULL 
+                    END AS EditColNo 
+                FROM
+                    (
+                    SELECT
+                        obj.name AS TableName,
+                        col.name AS ColumnName,
+                        CONVERT ( NVARCHAR ( 100 ), ISNULL( ep.[value], '' ) ) AS ColumnCNName,
+                        LOWER ( typ.name ) AS ColumnType,
+                    CASE
+                            
+                            WHEN col.length< 1 THEN
+                            0 ELSE col.length 
+                        END AS [Maxlength],
+                    CASE
+                            
+                            WHEN EXISTS (
+                            SELECT
+                                1 
+                            FROM
+                                dbo.sysindexes si
+                                INNER JOIN dbo.sysindexkeys sik ON si.id = sik.id 
+                                AND si.indid = sik.indid
+                                INNER JOIN dbo.syscolumns sc ON sc.id = sik.id 
+                                AND sc.colid = sik.colid
+                                INNER JOIN dbo.sysobjects so ON so.name = si.name 
+                                AND so.xtype = 'PK' 
+                            WHERE
+                                sc.id = col.id 
+                                AND sc.colid = col.colid 
+                                ) THEN
+                                1 ELSE 0 
+                            END AS IsKey,
+                        CASE
+                                WHEN col.isnullable = 1 THEN
+                                1 ELSE 0 
+                            END AS [IsNull],
+                            col.colorder,
+                            ROW_NUMBER ( ) OVER ( PARTITION BY col.name ORDER BY col.colid ) AS rn 
+                        FROM
+                            dbo.syscolumns col
+                            LEFT JOIN dbo.systypes typ ON col.xtype = typ.xusertype
+                            INNER JOIN dbo.sysobjects obj ON col.id = obj.id 
+                            AND obj.xtype IN ( 'U', 'V' )
                             LEFT JOIN dbo.syscomments comm ON col.cdefault = comm.id
-                            LEFT JOIN sys.extended_properties ep ON col.id = ep.major_id
-                                                              AND col.colid = ep.minor_id
-                                                              AND ep.name = 'MS_Description'
-                            LEFT JOIN sys.extended_properties epTwo ON obj.id = epTwo.major_id
-                                                              AND epTwo.minor_id = 0
-                                                              AND epTwo.name = 'MS_Description'
-                  WHERE obj.name = @tableName--表名
-                ) AS t
-            ORDER BY t.colorder";
+                            LEFT JOIN sys.extended_properties ep ON col.id = ep.major_id 
+                            AND col.colid = ep.minor_id 
+                            AND ep.name = 'MS_Description'
+                            LEFT JOIN sys.extended_properties epTwo ON obj.id = epTwo.major_id 
+                            AND epTwo.minor_id = 0 
+                            AND epTwo.name = 'MS_Description' 
+                        WHERE
+                            obj.name = @tableName
+                        ) t 
+                    WHERE
+                        t.rn = 1 
+                ORDER BY
+                    t.colorder";
         }
+
 
         /// <summary>
         /// 2020.08.07完善PGSQL
@@ -1495,7 +1518,7 @@ DISTINCT
             stringBuilder.Append("	WHEN col.udt_name = 'varchar' THEN ");
             stringBuilder.Append("	col.character_maximum_length  ");
             stringBuilder.Append("	WHEN col.udt_name IN ( 'int2', 'int4', 'int8', 'float4', 'float8' ) THEN ");
-            stringBuilder.Append("	col.numeric_precision ELSE 1024  ");
+            stringBuilder.Append("	col.numeric_precision ELSE 8000  ");
             stringBuilder.Append("	END \"Maxlength\", ");
             stringBuilder.Append("CASE ");
             stringBuilder.Append("	 ");
@@ -1557,21 +1580,21 @@ DISTINCT
         {
             columns.ForEach(x =>
             {
-                if (x.ColumnType.ToLower() == "datetime")
+                if (x.ColumnName == "DateTime")
                 {
-                    x.ColumnWidth = 150;
+                    x.ColumnWidth = 145;
                 }
-                else if (x.ColumnName.ToLower() == "modifier" || x.ColumnName.ToLower() == "creator")
+                else if (x.ColumnName == "Modifier" || x.ColumnName == "Creator")
                 {
                     x.ColumnWidth = 100;
                 }
-                else if (x.ColumnName.ToLower() == "modifyid" || x.ColumnName.ToLower() == "createid")
+                else if (x.ColumnName == "CreateID" || x.ColumnName == "ModifyID")
                 {
-                    x.ColumnWidth = 100;
+                    x.ColumnWidth = 80;
                 }
                 else if (x.Maxlength > 200)
                 {
-                    x.ColumnWidth = 220;
+                    x.ColumnWidth = 150;
                 }
                 else if (x.Maxlength > 110 && x.Maxlength <= 200)
                 {
@@ -1599,14 +1622,13 @@ DISTINCT
         /// <param name="tableId"></param>
         /// <param name="isTreeLoad"></param>
         /// <returns></returns>
-        private int InitTable(int parentId, string tableName, string columnCNName, string nameSpace, string foldername, int tableId, bool isTreeLoad)
+        private int InitTable(Sys_TableInfo sysTableInfo, int parentId, string tableName, string columnCNName, string nameSpace, string foldername, int tableId, bool isTreeLoad, string dbServer)
         {
             if (isTreeLoad)
                 return tableId;
             if (string.IsNullOrEmpty(tableName))
                 return -1;
-            tableId = repository.FindAsIQueryable(x => x.TableName == tableName).Select(s => s.Table_Id)
-                .ToList().FirstOrDefault();
+            tableId = repository.Find(x => x.TableName == tableName, s => s.Table_Id).FirstOrDefault();
             if (tableId > 0 && repository.DbContext.Set<Sys_TableColumn>().Any(x => x.Table_Id == tableId))
             {
                 return tableId;
@@ -1622,8 +1644,11 @@ DISTINCT
                 FolderName = foldername,
                 Enable = 1
             };
-            List<Sys_TableColumn> columns = repository.DapperContext
-                .QueryList<Sys_TableColumn>(GetCurrentSql(tableName), new { tableName });
+
+            string connection = GetConnectionKey(tableInfo);
+            //2024.06.20增加获取指定数据库与指定数据库类型
+            List<Sys_TableColumn> columns =repository
+                .QueryList<Sys_TableColumn>(GetCurrentSql(tableName, connection, DBType.Name), new { tableName });
 
             int orderNo = (columns.Count + 10) * 50;
             for (int i = 0; i < columns.Count; i++)
@@ -1634,11 +1659,9 @@ DISTINCT
             }
 
             SetMaxLength(columns);
-            var result = base.Add<Sys_TableColumn>(tableInfo, columns, false);
-            if (!result.Status)
-            {
-                throw new Exception($"加载表结构写入异常：{result.Message}");
-            }
+            tableInfo.TableColumns = columns;
+            repository.Add(tableInfo, true);
+            //base.Add<Sys_TableColumn>(tableInfo, columns, false);
             return tableInfo.Table_Id;
         }
 
@@ -1653,22 +1676,39 @@ DISTINCT
         /// <param name="tableId"></param>
         /// <param name="isTreeLoad">true只加载表数据</param>
         /// <returns></returns>
-        public object LoadTable(int parentId, string tableName, string columnCNName, string nameSpace, string foldername, int tableId, bool isTreeLoad)
+        public object LoadTable(Sys_TableInfo sysTableInfo, int parentId, string tableName, string columnCNName, string nameSpace, string foldername, int tableId, bool isTreeLoad, string dbServer)
         {
+            WebResponseContent webResponse = new WebResponseContent();
             if (!UserContext.Current.IsSuperAdmin && !isTreeLoad)
             {
-                return new WebResponseContent().Error("只有超级管理员才能进行此操作");
+                return webResponse.Error("只有超级管理员才能进行此操作");
             }
-            tableId = InitTable(parentId, tableName?.Trim(), columnCNName, nameSpace, foldername, tableId, isTreeLoad);
+
+            tableId = InitTable(sysTableInfo, parentId, tableName?.Trim(), columnCNName, nameSpace, foldername, tableId, isTreeLoad, dbServer);
             Sys_TableInfo tableInfo = repository
-                .FindAsIQueryable(x => x.Table_Id == tableId)
+                //.FindAsIQueryable(x => x.Table_Id == tableId)
+                .WhereIF(isTreeLoad && tableId == 0 || !isTreeLoad, x => x.TableName == tableName)
+                .WhereIF(tableId > 0, x => x.Table_Id == tableId)
                 .Include(c => c.TableColumns)
                 .ToList().FirstOrDefault();
-            if (tableInfo.TableColumns != null)
+
+            if (tableInfo?.TableColumns != null)
             {
                 tableInfo.TableColumns = tableInfo.TableColumns.OrderByDescending(x => x.OrderNo).ToList();
+
+                tableInfo.TableColumns.ForEach(x =>
+                {
+                    if (!string.IsNullOrEmpty(x.ColumnCnName))
+                    {
+                        x.ColumnCnName = x.ColumnCnName.Trim().Replace("\r\n", "");
+                    }
+                    if (!string.IsNullOrEmpty(x.ColumnName))
+                    {
+                        x.ColumnName = x.ColumnName.Trim().Replace("\r\n", "");
+                    }
+                });
             }
-            return new WebResponseContent().OK(null, tableInfo);
+            return webResponse.OK(null, tableInfo);
         }
 
         public async Task<WebResponseContent> DelTree(int table_Id)
@@ -1676,7 +1716,21 @@ DISTINCT
             if (table_Id == 0) return new WebResponseContent().Error("没有传入参数");
             await repository.FindAsIQueryable(x => x.Table_Id == table_Id).ExecuteDeleteAsync();
             await repository.DbContext.Set<Sys_TableColumn>().Where(x => x.Table_Id == table_Id).ExecuteDeleteAsync();
-            return new WebResponseContent().OK();
+
+            //Sys_TableInfo tableInfo = (await repository.FindAsIQueryable(x => x.Table_Id == table_Id)
+            //    .Include(c => c.TableColumns)
+            //    .ToListAsync()).FirstOrDefault();
+            //if (tableInfo == null) return new WebResponseContent().OK();
+            //if (tableInfo.TableColumns != null && tableInfo.TableColumns.Count > 0)
+            //{
+            //    return new WebResponseContent().Error("当前删除的节点存在表结构信息,只能删除空节点");
+            //}
+            //if (repository.Exists(x => x.ParentId == table_Id))
+            //{
+            //    return new WebResponseContent().Error("当前删除的节点存在子节点，不能删除");
+            //}
+            //repository.Delete(tableInfo, true);
+            return new WebResponseContent().OK("删除成功,删除后请刷新页面");
         }
 
         /// <summary>
@@ -1687,7 +1741,7 @@ DISTINCT
         /// <param name="detail"></param>
         /// <param name="vue"></param>
         /// <returns></returns>
-        private StringBuilder GetGridColumns(List<Sys_TableColumn> list, string expressField, bool detail, bool vue = false, bool app = false)
+        private StringBuilder GetGridColumns(List<Sys_TableColumn> list, string expressField, bool detail, bool vue = false, bool app = false, bool subCols = false)
         {
             totalCol = 0;
             totalWidth = 0;
@@ -1731,6 +1785,10 @@ DISTINCT
                     {
                         colType = "date";
                     }
+                    else if (item.IsImage == 5)
+                    {
+                        colType = "month";
+                    }
                     sb.Append("type:'" + colType + "',");
                     if (!string.IsNullOrEmpty(item.DropNo))
                     {
@@ -1745,16 +1803,39 @@ DISTINCT
                     {
                         sb.Append("sort:true,");
                     }
+                    if (!app)
+                    {
+                        if (item.HeaderFilter == 1)
+                        {
+                            sb.Append("filterData:true,");
+                        }
+                        if (!string.IsNullOrEmpty(item.TextAlign) && item.TextAlign != "left")
+                        {
+                            sb.Append($"align:'{item.TextAlign}',");
+                        }
+                        if (item.ShowOverflowTooltip == 1)
+                        {
+                            sb.Append("showOverflowTooltip:true,");
+                        }
+                    }
+                    if (!string.IsNullOrEmpty(item.FixedColumn))
+                    {
+                        sb.Append($"fixed:'{item.FixedColumn}',");
+                    }
+                    if (!string.IsNullOrEmpty(item.SummaryType))
+                    {
+                        sb.Append($"summary:'{item.SummaryType}',");
+                    }
                 }
                 else
                 {
                     sb.Append("datatype:'" + item.ColumnType + "',");
                 }
 
-                if (!app)
-                {
-                    sb.Append("width:" + (item.ColumnWidth ?? 90) + ",");
-                }
+                //if (!app)
+                //{
+                sb.Append("width:" + (item.ColumnWidth ?? 90) + ",");
+                //}
                 if (item.IsDisplay == 0)
                 {
                     sb.Append("hidden:true,");
@@ -1767,6 +1848,14 @@ DISTINCT
                 if (item.IsReadDataset == 1)
                 {
                     sb.Append("readonly:true,");
+                }
+                else if (item.IsReadDataset == 2)
+                {
+                    sb.Append("readonlyUpdate:true,");
+                }
+                else if (item.IsReadDataset == 3)
+                {
+                    sb.Append("readonlyAdd:true,");
                 }
                 //detail明细才启用表格编辑
                 if (item.EditRowNo != null && item.EditRowNo > 0 && detail)//!string.IsNullOrEmpty(item.EditType))
@@ -1836,27 +1925,33 @@ DISTINCT
 
                 if (!app && (item.ColumnType.ToLower() == "datetime" || (item.IsDisplay == 1 & !sort)))
                 {
-                    //2021.09.05修改排序名称
-                    sb.Append("align:'left'},");
-                    //if (item.IsDisplay == 1)
-                    //{
-                    //    sort = true;
-                    //}
+
+                    // sb.Append("align:'left'},");
+                    sb.Append("},");
+                    if (item.IsDisplay == 1)
+                    {
+                        sort = true;
+                    }
                 }
                 else
                 {
                     if (!app)
                     {
-                        sb.Append("align:'left'},");
+                        //sb.Append("align:'left'},");
+                        sb.Append("},");
                     }
                 }
                 if (app)
                 {
                     sb.Append("},").Replace(",},", "},");
                 }
-
+                sb.Replace(",}", "}");
                 sb.AppendLine();
                 sb.Append("                       ");
+                if (subCols)
+                {
+                    sb.Append("                       ");
+                }
             }
             return sb;
         }
@@ -1901,19 +1996,21 @@ DISTINCT
                     string.IsNullOrEmpty(column.ColumnCnName) ? column.ColumnName : column.ColumnCnName
                     ) + "\")]");
                 AttributeBuilder.Append("\r\n");
-
+       
                 TableColumnInfo tableColumnInfo = tableColumnInfoList.Where(x => x.ColumnName.ToLower().Trim() == column.ColumnName.ToLower().Trim()).FirstOrDefault();
-                if (tableColumnInfo != null && (tableColumnInfo.ColumnType == "varchar" && column.Maxlength > 8000)
-                             || (tableColumnInfo.ColumnType == "nvarchar" && column.Maxlength > 4000))
+                if (tableColumnInfo != null && ((tableColumnInfo.ColumnType == "varchar" && column.Maxlength > 8000)
+                             || (tableColumnInfo.ColumnType == "nvarchar" && column.Maxlength > 4000)))
                 {
                     column.Maxlength = 0;
                 }
 
                 if (column.ColumnType == "string" && column.Maxlength > 0 && column.Maxlength < 8000)
                 {
-
-                    AttributeBuilder.Append("       [MaxLength(" + column.Maxlength + ")]");
-                    AttributeBuilder.Append("\r\n");
+                    if (column.Maxlength < 2000)
+                    {
+                        AttributeBuilder.Append("       [MaxLength(" + column.Maxlength + ")]");
+                        AttributeBuilder.Append("\r\n");
+                    }
                 }
                 //不是数据列的，返回页面数据前不包含此列的数据
                 if (column.IsColumnData == 0 && createType == 1)
@@ -1932,15 +2029,16 @@ DISTINCT
                         AttributeBuilder.Append("\r\n");
                     }
 
-                    if (
-                        (DBType.Name.ToLower() == DbCurrentType.Oracle.ToString().ToLower() && (column.Maxlength == 36))
-                        || ((column.IsKey == 1 && (column.ColumnType == "uniqueidentifier")) ||
-                        tableColumnInfo.ColumnType.ToLower() == "guid"
-                        || ((IsMysql() || IsDM()) && column.ColumnType == "string" && column.Maxlength == 36)))
+                    if (tableColumnInfo.ColumnType.ToLower() == "guid")
                     {
                         tableColumnInfo.ColumnType = "uniqueidentifier";
                     }
 
+                    if ((column.IsKey == 1 && (column.ColumnType == "uniqueidentifier"))
+                        || (IsMysql() && column.ColumnType == "string" && column.Maxlength == 36))
+                    {
+                        tableColumnInfo.ColumnType = "uniqueidentifier";
+                    }
 
                     string maxLength = string.Empty;
                     if (tableColumnInfo.ColumnType != "uniqueidentifier")
@@ -1949,8 +2047,8 @@ DISTINCT
                         {
                             //没有指定长度的字符串字段 ，如varchar,nvarchar，text等都默认生成varchar(max),nvarchar(max)
                             if (column.Maxlength <= 0
-                                || (tableColumnInfo.ColumnType == "varchar" && column.Maxlength > 8000)
-                                || (tableColumnInfo.ColumnType == "nvarchar" && column.Maxlength > 4000))
+                                || ((tableColumnInfo.ColumnType == "varchar" || tableColumnInfo.ColumnType == "string") && column.Maxlength >= 8000)
+                                || ((tableColumnInfo.ColumnType == "nvarchar" || tableColumnInfo.ColumnType == "string") && column.Maxlength >= 4000))
                             {
                                 maxLength = "(max)";
                             }
@@ -1958,24 +2056,38 @@ DISTINCT
                             {
                                 maxLength = "(" + column.Maxlength + ")";
                             }
+
                         }
-                        else if (column.IsKey == 1 && column.ColumnType.ToLower() == "string" && column.Maxlength != 36)
+                        if (column.IsKey == 1 && column.ColumnType.ToLower() == "string")
                         {
-                            maxLength = "(" + column.Maxlength + ")";
+                            maxLength = "(" + (column.Maxlength ?? 100) + ")";
                         }
                     }
-                    AttributeBuilder.Append("       [Column(TypeName=\"" + tableColumnInfo.ColumnType + maxLength + "\")]");
+                    string typeName = tableColumnInfo.ColumnType;
+                    if (DBType.Name == "PgSql" && tableColumnInfo.ColumnType == "long")
+                    {
+                        typeName = "bigint";
+                    }
+                    //oracle类型处理
+                    if (maxLength == "(max)" && DBType.Name == "Oracle")
+                    {
+                        maxLength = "CLOB";
+                        AttributeBuilder.Append("       [Column(TypeName=\"" + (maxLength) + "\")]");
+                    }
+                    else
+                    {
+                        AttributeBuilder.Append("       [Column(TypeName=\"" + (typeName + maxLength).ToLower() + "\")]");
+                    }
+
                     AttributeBuilder.Append("\r\n");
 
-
-                    //if ((tableColumnInfo.ColumnType == "int" || tableColumnInfo.ColumnType == "bigint" || tableColumnInfo.ColumnType == "long") && column.ColumnType.ToLower() == "string")
                     if (tableColumnInfo.ColumnType == "int" || tableColumnInfo.ColumnType == "bigint" || tableColumnInfo.ColumnType == "long")
                     {
                         column.ColumnType = tableColumnInfo.ColumnType == "int" ? "int" : "long";
                     }
                     if (tableColumnInfo.ColumnType == "bool")
                     {
-                        column.ColumnType = "bit";
+                        column.ColumnType = "bool";
                     }
                 }
 
@@ -1991,34 +2103,60 @@ DISTINCT
                     AttributeBuilder.Append("\r\n");
                 }
                 string columnType = (column.ColumnType == "Date" ? "DateTime" : column.ColumnType).Trim();
-                if (new string[] { "guid", "uniqueidentifier" }.Contains(tableColumnInfo?.ColumnType?.ToLower()))
+                if (tableColumnInfo?.ColumnType?.ToLower() == "guid")
                 {
                     columnType = "Guid";
+                }
+                if (columnType == "time")
+                {
+                    columnType = "TimeSpan";
                 }
                 if (column.ColumnType.ToLower() != "string" && column.IsNull == 1)
                 {
                     columnType = columnType + "?";
                 }
                 //如果主键是string,则默认为是Guid或者使用的是mysql数据，字段类型是字符串并且长度是36则默认为是Guid
-                if ((column.IsKey == 1
-                    && (column.ColumnType == "uniqueidentifier"))
-                       || column.ColumnType == "guid"
-                   || ((IsMysql() || IsDM() || IsOracle()) && column.ColumnType == "string" && column.Maxlength == 36))
+                if ((column?.ColumnType?.ToLower() == "uniqueidentifier" || column?.ColumnType?.ToLower() == "guid")
+                  || (IsMysql() && column.ColumnType == "string" && column.Maxlength == 36))
                 {
+                    //if (column.ColumnType == "string" && DBType.Name.ToLower() != DbCurrentType.MsSql.ToString().ToLower())
+                    //{
                     columnType = "Guid" + (column.IsNull == 1 ? "?" : "");
+                    //  }
+
                 }
                 AttributeBuilder.Append("       public " + columnType + " " + column.ColumnName + " { get; set; }");
                 AttributeBuilder.Append("\r\n\r\n       ");
             }
+            string[] detailTables = null;
+            string[] detailNames = null;
             if (!string.IsNullOrEmpty(tableInfo.DetailName) && createType == 1)
             {
-                AttributeBuilder.Append("[Display(Name =\"" + tableInfo.DetailCnName + "\")]");
-                AttributeBuilder.Append("\r\n       ");
-                //2019.12.20增加明细表属性的ForeignKey配置(EF Core 3.1配项)
-                AttributeBuilder.Append("[ForeignKey(\"" + sysColumn.Where(x => x.IsKey == 1).FirstOrDefault().ColumnName + "\")]");
-                AttributeBuilder.Append("\r\n       ");
-                AttributeBuilder.Append("public List<" + tableInfo.DetailName + "> " + tableInfo.DetailName + " { get; set; }");
-                AttributeBuilder.Append("\r\n");
+                //  'typeof('+[1,2].join('),typeof(')+')'
+                tableInfo.DetailName = tableInfo.DetailName.Replace("，", "").Trim();
+                detailTables = tableInfo.DetailName.Split(',');
+
+                tableInfo.DetailCnName = tableInfo.DetailCnName.Replace("，", "").Trim();
+
+                detailNames = tableInfo.DetailCnName.Split(',');
+
+                for (int i = 0; i < detailTables.Length; i++)
+                {
+                    string detailTableName = detailTables[i];
+                    AttributeBuilder.Append("[Display(Name =\"" + detailNames[i] + "\")]");
+                    AttributeBuilder.Append("\r\n       ");
+                    //明细表导航属性
+                    string foreignKey = repository.FindAsIQueryable(x => x.TableName == detailTableName).Select(s => s.MainKeyField).FirstOrDefault();
+                    if (string.IsNullOrEmpty(foreignKey))
+                    {
+                        foreignKey = sysColumn.Where(x => x.IsKey == 1).FirstOrDefault().ColumnName;
+                    }
+                    AttributeBuilder.Append("[ForeignKey(\"" + foreignKey + "\")]");
+                    AttributeBuilder.Append("\r\n       ");
+                    AttributeBuilder.Append("public List<" + detailTableName + "> " + detailTableName + " { get; set; }");
+                    AttributeBuilder.Append("\r\n");
+                    AttributeBuilder.Append("\r\n\r\n       ");
+                }
             }
             if (addIgnore && createType == 1)
             {
@@ -2026,7 +2164,7 @@ DISTINCT
             }
             //获取的是本地开发代码所在目录，不是布后的目录
             string mapPath = ProjectPath.GetProjectDirectoryInfo()?.FullName; //new DirectoryInfo(("~/").MapPath()).Parent.FullName;
-                                                                              //  string folderPath= string.Format("\\VOL.Framework.Core.\\DomainModels\\{0}\\", foldername);
+                                                                              //  string folderPath= string.Format("\\VolPro.Framework.Core.\\DomainModels\\{0}\\", foldername);
             if (string.IsNullOrEmpty(mapPath))
             {
                 return "未找到生成的目录!";
@@ -2044,10 +2182,10 @@ DISTINCT
                 //entityAttribute.Add("TableName = \"" + tableInfo.TableTrueName.ToLower() + "\"");
                 entityAttribute.Add("TableName = \"" + tableInfo.TableTrueName + "\"");
             }
+
             if (!string.IsNullOrEmpty(tableInfo.DetailName) && createType == 1)
             {
-                //  'typeof('+[1,2].join('),typeof(')+')'
-                string typeArr = " new Type[] { typeof(" + string.Join("),typeof(", tableInfo.DetailName.Split(',')) + ")}";
+                string typeArr = " new Type[] { typeof(" + string.Join("),typeof(", detailTables) + ")}";
                 entityAttribute.Add("DetailTable = " + typeArr + "");
             }
             if (!string.IsNullOrEmpty(tableInfo.DetailCnName))
@@ -2055,21 +2193,17 @@ DISTINCT
 
                 entityAttribute.Add("DetailTableCnName = \"" + tableInfo.DetailCnName + "\"");
             }
-            if (!string.IsNullOrEmpty(tableInfo.DBServer) && createType == 1)
-            {
-                entityAttribute.Add("DBServer = \"" + tableInfo.DBServer + "\"");
-            }
 
             if (createType == 1)
             {
-                //if (sysColumn.Any(x => x.ApiInPut > 0))
-                //{
-                //    entityAttribute.Add("ApiInput = typeof(Api" + tableInfo.TableName + "Input)");
-                //}
-                //if (sysColumn.Any(x => x.ApiOutPut > 0))
-                //{
-                //    entityAttribute.Add("ApiOutput = typeof(Api" + tableInfo.TableName + "Output)");
-                //}
+                if (sysColumn.Any(x => x.ApiInPut > 0))
+                {
+                    entityAttribute.Add("ApiInput = typeof(Api" + tableInfo.TableName + "Input)");
+                }
+                if (sysColumn.Any(x => x.ApiOutPut > 0))
+                {
+                    entityAttribute.Add("ApiOutput = typeof(Api" + tableInfo.TableName + "Output)");
+                }
             }
             string modelNameSpace = StratName + ".Entity";
             string tableAttr = string.Join(",", entityAttribute);
@@ -2086,7 +2220,6 @@ DISTINCT
             if (!string.IsNullOrEmpty(tableInfo.TableTrueName) && tableInfo.TableName != tableInfo.TableTrueName)
             {
                 string tableTrueName = tableInfo.TableTrueName;
-                //2020.06.14 pgsql数据库，设置表名为小写(数据库创建表的时候也要使用小写)
                 if (DBType.Name == DbCurrentType.PgSql.ToString())
                 {
                     tableTrueName = tableTrueName.ToLower();
@@ -2112,28 +2245,35 @@ DISTINCT
             //  "\\" + modelNameSpace + "\\DomainModels\\{0}\\", folderName
             //  )
             string modelPath = $"{mapPath}\\{modelNameSpace}\\DomainModels\\{folderName}\\";
+
+
+            modelPath = $"{mapPath}\\{modelNameSpace}\\DomainModels\\{folderName}\\";
+
+
+
             FileHelper.WriteFile(modelPath, tableName + ".cs", domainContent);
             //partialContent
             modelPath += "partial\\";
             if (!FileHelper.FileExists(modelPath + tableName + ".cs"))
             {
                 partialContent = partialContent.Replace("{AttributeManager}", "")
+                    .Replace(":{Temp_Entity}", "")
                     .Replace("{AttributeList}", @"//此处配置字段(字段配置见此model的另一个partial),如果表中没有此字段请加上 [NotMapped]属性，否则会异常")
-                    .Replace(":BaseEntity", "")
+                    .Replace(":SysEntity", "")
                     .Replace("{TableName}", tableInfo.TableName).Replace("{Namespace}", modelNameSpace);
                 FileHelper.WriteFile(modelPath, tableName + ".cs", partialContent);
             }
             if (createType == 1)
             {
-                string mappingConfiguration = FileHelper.
-              ReadFile("Template\\DomianModel\\MappingConfiguration.html")
-              .Replace("{TableName}", tableInfo.TableName).Replace("{Namespace}", modelNameSpace).Replace("{StartName}", StratName);
-                //FileHelper.WriteFile(
-                //    mapPath +
-                //    string.Format("\\" + modelNameSpace + "\\MappingConfiguration\\{0}\\"
-                //    , tableInfo.FolderName)
-                //    , tableInfo.TableName + "MapConfig.cs",
-                //    mappingConfiguration);
+                //  string mappingConfiguration = FileHelper.
+                //ReadFile("Template\\DomianModel\\MappingConfiguration.html")
+                //.Replace("{TableName}", tableInfo.TableName).Replace("{Namespace}", modelNameSpace).Replace("{StartName}", StratName);
+                //  FileHelper.WriteFile(
+                //      mapPath +
+                //      string.Format("\\" + modelNameSpace + "\\MappingConfiguration\\{0}\\"
+                //      , tableInfo.FolderName)
+                //      , tableInfo.TableName + "MapConfig.cs",
+                //      mappingConfiguration);
             }
             return "";
         }
@@ -2215,80 +2355,111 @@ DISTINCT
                         text = x.ColumnCnName ?? x.ColumnName,
                         id = x.ColumnName,
                         displayType = GetDisplayType(search, x.SearchType, x.EditType, x.ColumnType),
-                        require = !search && x.IsNull == 0 ? true : false,
+                        require = !search && x.IsNull == 0,
                         columnType = vue && x.IsImage == 1 ? "img" : (x.ColumnType ?? "string").ToLower(),
-                        disabled = !search && x.IsReadDataset == 1 ? true : false,
+                        disabled = !search && x.IsReadDataset >= 1 ? true : false,
+                        readonlyType = x.IsReadDataset,
                         dataSource = GetDropString(x.DropNo, vue),
-                        colSize = search && x.SearchType != "checkbox" ? 0 : (x.ColSize ?? 0)
+                        colSize = search && x.SearchType != "checkbox" ?0 : (x.ColSize ?? 0),
+                        placeholder = search ? "" : x.Placeholder,
+                        addDefaultValue = search ? null : x.AddDefaultValue
                     }).ToList());
             }
         }
 
-        private static bool IsOracle()
-        {
-            return DBType.Name.ToLower() == DbCurrentType.Oracle.ToString().ToLower();
-        }
+
         private static bool IsMysql()
         {
-            return DBType.Name.ToLower() == DbCurrentType.MySql.ToString().ToLower();
+            return DBType.Name.ToLower() == DbCurrentType.MySql.ToString().ToLower()
+                || DBType.Name.ToLower() == DbCurrentType.Oracle.ToString().ToLower();
         }
-
-        private static bool IsDM()
-        {
-            return DBType.Name.ToLower() == DbCurrentType.DM.ToString().ToLower();
-        }
-
         private WebResponseContent ValidColumnString(Sys_TableInfo tableInfo)
         {
             WebResponseContent webResponse = new WebResponseContent(true);
-            if (tableInfo.TableColumns == null || tableInfo.TableColumns.Count == 0) return webResponse;
+            if (tableInfo.TableColumns?.Count == 0) return webResponse;
 
-            if (!string.IsNullOrEmpty(tableInfo.DetailName))
+
+            if (tableInfo.TableColumns.Where(x => x.IsKey == 1).Count() > 1)
             {
-                Sys_TableColumn mainTableColumn = tableInfo.TableColumns
-                     .Where(x => x.IsKey == 1)
-                     // .Select(s => s.ColumnName)
-                     .FirstOrDefault();
-                if (mainTableColumn == null)
-                    return webResponse.Error($"请勾选表[{tableInfo.TableName}]的主键");
-
-                string key = mainTableColumn.ColumnName;
-
-                //明细表外键列的配置信息
-                Sys_TableColumn tableColumn = repository
-                    .Find<Sys_TableColumn>(x => x.TableName == tableInfo.DetailName && x.ColumnName == key)
-                    .ToList().FirstOrDefault();
-
-                if (tableColumn == null)
-                    return webResponse.Error($"明细表必须包括[{tableInfo.TableName}]主键字段[{key}]");
-
-                if (mainTableColumn.ColumnType?.ToLower() != tableColumn.ColumnType?.ToLower())
-                {
-                    return webResponse.Error($"明细表的字段[{tableColumn.ColumnName}]类型必须与主表的主键的类型相同");
-                }
-
-                if (!IsMysql() || !IsDM()) return webResponse;
-
-                if (mainTableColumn.ColumnType?.ToLower() == "string"
-                    && tableColumn.Maxlength != 36)
-                {
-                    return webResponse.Error($"主表主键类型为Guid，明细表[{tableInfo.DetailName}]配置的字段[{key}]长度必须是36，请重将明细表字段[{key}]长度设置为36，点击保存与生成Model");
-                }
-
-
-                //mysql如果主键使用的是guid，需要判断明细表的外键是否配置正确
-
-
+                return webResponse.Error("当前表选择了多个主键,表格中的[主键]列只能选择一个字段作为主键");
             }
 
-            //if (tableInfo.TableColumns.Exists(x => x.ColumnType == "string" && (x.Maxlength ?? 0) <= 0))
+
+            if (string.IsNullOrEmpty(tableInfo.DetailName)) return webResponse.OK();
+
+            string[] names = (tableInfo.DetailCnName ?? "").Replace("，", ",").Replace("\r\n", "").Split(",");
+            string[] detailTables = tableInfo.DetailName.Trim().Replace("，", ",").Replace("\r\n", "").Split(",").Distinct().ToArray();
+
+            if (names.Length != detailTables.Length)
+            {
+                return webResponse.Error("【明细表中文名】与【明细表】字段数量要一致，多张表与表名用逗号隔开");
+            }
+
+            Sys_TableColumn mainKeyColumn = tableInfo.TableColumns
+                 .Where(x => x.IsKey == 1)
+                 // .Select(s => s.ColumnName)
+                 .FirstOrDefault();
+            if (mainKeyColumn == null)
+                return webResponse.Error($"请勾选表[{tableInfo.TableName}]的主键");
+
+            string key = mainKeyColumn.ColumnName;
+
+            //明细表外键列的配置信息
+            var detailTableColumns = repository
+                .Find<Sys_TableColumn>(x => detailTables.Contains(x.TableName))
+                .Select(s => new { s.ColumnName, s.TableName, s.ColumnType, s.IsKey })
+                .ToList();
+
+            var tableArr = detailTables.Where(c => !detailTableColumns.Any(x => x.TableName == c)).ToList();
+            if (tableArr.Count > 0)
+            {
+                return webResponse.Error($"明细表【{string.Join(",", tableArr)}】必须先生成代码");
+            }
+            //明细表配置
+            var tableIno = repository.FindAsIQueryable(x => detailTables.Contains(x.TableName)).Select(s => new { s.TableName, s.MainKeyField }).ToList();
+
+            foreach (var item in tableIno)
+            {
+                if (!string.IsNullOrEmpty(item.MainKeyField))
+                {
+                    var detailMainKeyColumn = detailTableColumns.Where(x => x.TableName == item.TableName && x.ColumnName == item.MainKeyField).FirstOrDefault();
+                    if (detailMainKeyColumn == null)
+                    {
+                        return webResponse.Error($"未找到明细表【{item.TableName}】配置【与主表关联字段】,请在明细表上重新选择【与主表关联字段】或者");
+                    }
+                    if (detailMainKeyColumn.IsKey == 1)
+                    {
+                        return webResponse.Error($"明细表{item.TableName}不能选择主键字段【与主表关联字段】，请重新选择明细表【与主表关联字段】");
+                    }
+                    if (detailMainKeyColumn.ColumnType?.ToLower() != mainKeyColumn.ColumnType?.ToLower())
+                    {
+                        return webResponse.Error(@$"明细表【{item.TableName}】配置【与主表关联字段】的类型不一致;
+                                主表主键字段类型为:[{mainKeyColumn.ColumnType}]，明细表[与主表关联字段]类型为[{detailMainKeyColumn.ColumnType}]
+                                ,请在明细表上重新选择【与主表关联字段】");
+                    }
+                }
+                else
+                {
+                    var b = !detailTableColumns.Any(x => x.TableName == item.TableName && x.ColumnName == key && mainKeyColumn.ColumnType?.ToLower() == x.ColumnType?.ToLower());
+                    if (b)
+                    {
+                        return webResponse.Error($"明细表【{item.TableName}】必须包括主表主键字段[{key}],并且字段类型要相同,或者明细表配置选择【与主表关联字段】");
+                    }
+                }
+            }
+            if (!IsMysql()) return webResponse;
+
+            //if (mainTableColumn.ColumnType?.ToLower() == "string" && mainTableColumn.Maxlength == 36)
             //{
-            //    webResponse.Error("数据类型为string的列，必须输入[列最大长度]的值");
+            //    tableArr = tableColumns.Where(c => c.ColumnName == key && c.Maxlength != 36).Select(c => c.TableName).ToList();
+            //    if (tableArr.Count > 0)
+            //    {
+            //        return webResponse.Error($"主表主键类型为Guid，明细表[{string.Join(",", tableArr)}]配置的字段[{key}]长度必须是36，请重将明细表字段[{key}]长度设置为36，点击保存与生成Model");
+            //    }
             //}
+            //mysql如果主键使用的是guid，需要判断明细表的外键是否配置正确
             return webResponse;
         }
-
-
     }
     public class PanelHtml
     {
@@ -2300,8 +2471,13 @@ DISTINCT
         public string columnType { get; set; }
         public bool require { get; set; }
         public bool disabled { get; set; }
-        public int colSize { get; set; }
+        public decimal colSize { get; set; }
         public int fileMaxCount { get; set; }
+
+        public string placeholder { get; set; }
+        public int? readonlyType { get; set; }
+
+        public string addDefaultValue { get; set; }
     }
 }
 

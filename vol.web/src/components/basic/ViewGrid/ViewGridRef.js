@@ -8,6 +8,7 @@ export const getGridTableRef = (proxy, props, table) => {
 export const getDetailTableRef = (proxy, props, table) => {
   //获取明细表
   if (table && props.details.length) {
+    //获取一对多的table表格
     let _obj =
       proxy.$refs.detailsRef.$refs[table] ||
       (proxy.$refs.subDetailsRef && proxy.$refs.subDetailsRef.$refs[table])

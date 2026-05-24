@@ -19,6 +19,10 @@ export default function () {
         return []
       }
     },
+    generic:{
+      type:Boolean,
+      default:false
+    },
     detail: {
       //从表明细配置
       type: Object,
@@ -77,6 +81,14 @@ export default function () {
       default: () => {
         return {}
       }
+    },
+    priview:{
+      type:Boolean,
+      default:false
+    },
+    coderTableId:{
+      type:Number,
+      default:0
     }
   }
 }

@@ -8,7 +8,6 @@ namespace VOL.Sys.Repositories
 {
     public partial class Sys_MenuRepository
     {
-        public override VOLContext DbContext => base.DbContext;
     }
 }
 

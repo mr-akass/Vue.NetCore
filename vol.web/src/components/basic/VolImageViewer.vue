@@ -1,6 +1,6 @@
 <template>
-    <el-image-viewer hide-on-click-modal v-if="showImageViewer" :initial-index="initialIndex" :url-list="imageViewerList"
-        @close="closeViewer"></el-image-viewer>
+    <el-image-viewer hide-on-click-modal v-if="showImageViewer" :initial-index="initialIndex"
+        :url-list="imageViewerList" show-progress @close="closeViewer"></el-image-viewer>
 </template>
 <script>
 import { ref } from 'vue';
@@ -17,10 +17,10 @@ export default {
             } else {
                 imageViewerList.value = [imgs]
             }
-            showImageViewer.value=true;
+            showImageViewer.value = true;
         }
-        const closeViewer=()=>{
-            showImageViewer.value=false;
+        const closeViewer = () => {
+            showImageViewer.value = false;
         }
         return {
             initialIndex,

@@ -55,6 +55,10 @@ const props = defineProps({
 
   .vol-title-text {
     font-weight: bolder;
+    color: #000;
+  }
+  .vol-title-icon{
+        color: #000;
   }
 
   .vol-title-buttons {

@@ -1,12 +1,9 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json;
-using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
-using VOL.Core.Configuration;
+using VOL.Core.Enums;
 using VOL.Core.Extensions;
 using VOL.Core.Filters;
 using VOL.Core.Middleware;
@@ -33,27 +30,48 @@ namespace VOL.Core.Controllers.Basic
             Service = service;
         }
         [ActionLog("查询")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Search)]
-        [HttpPost, Route("GetPageData")]
+        [ApiActionPermission(ActionPermissionOptions.Search)]
+        [HttpPost, Route("getPageData")]
         public virtual ActionResult GetPageData([FromBody] PageDataOptions loadData)
         {
-            return JsonNormal(InvokeService("GetPageData", new object[] { loadData }));
+            return JsonNormal(InvokeService("GetPageData", [loadData]));
         }
-
+        [ActionLog("查询")]
+        [ApiActionPermission(ActionPermissionOptions.Search)]
+        [HttpPost, Route("getPageDataAsync")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<ActionResult> GetPageDataAsync([FromBody] PageDataOptions loadData)
+        {
+            dynamic task = InvokeService("GetPageDataAsync", [loadData]);
+            return JsonNormal(await task);
+        }
         /// <summary>
-        /// 获取明细grid分页数据
+        /// 获取明细分页数据
         /// </summary>
         /// <param name="loadData"></param>
         /// <returns></returns>
         [ActionLog("明细查询")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Search)]
+        [ApiActionPermission(ActionPermissionOptions.Search)]
         [HttpPost, Route("GetDetailPage")]
         [ApiExplorerSettings(IgnoreApi = true)]
         public virtual ActionResult GetDetailPage([FromBody] PageDataOptions loadData)
         {
-            return Content(InvokeService("GetDetailPage", new object[] { loadData }).Serialize());
+            return JsonNormal(InvokeService("GetDetailPage", [loadData]));
         }
-
+        /// <summary>
+        /// 获取明细分页数据
+        /// </summary>
+        /// <param name="loadData"></param>
+        /// <returns></returns>
+        [ActionLog("明细查询")]
+        [ApiActionPermission(ActionPermissionOptions.Search)]
+        [HttpPost, Route("getDetailPageAsync")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<ActionResult> GetDetailPageAsync([FromBody] PageDataOptions loadData)
+        {
+            dynamic task = InvokeService("GetDetailPageAsync", [loadData]);
+            return JsonNormal(await task);
+        }
         /// <summary>
         /// 上传文件
         /// </summary>
@@ -61,11 +79,20 @@ namespace VOL.Core.Controllers.Basic
         /// <returns></returns>
         [ActionLog("上传文件")]
         [HttpPost, Route("Upload")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Upload)]
+        [ApiActionPermission(ActionPermissionOptions.Upload | ActionPermissionOptions.Add | ActionPermissionOptions.Update)]
         [ApiExplorerSettings(IgnoreApi = true)]
         public virtual IActionResult Upload(IEnumerable<IFormFile> fileInput)
         {
-            return Json(InvokeService("Upload", new object[] { fileInput }));
+            return Json(InvokeService("Upload", [fileInput]));
+        }
+        [ActionLog("上传文件")]
+        [HttpPost, Route("uploadAsync")]
+        [ApiActionPermission(ActionPermissionOptions.Upload | ActionPermissionOptions.Add | ActionPermissionOptions.Update)]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<IActionResult> UploadAsync(IEnumerable<IFormFile> fileInput)
+        {
+            var res = await (InvokeService("UploadAsync", [fileInput]) as Task<WebResponseContent>);
+            return Json(res);
         }
         /// <summary>
         /// 下载导入Excel模板
@@ -73,18 +100,28 @@ namespace VOL.Core.Controllers.Basic
         /// <returns></returns>
         [ActionLog("下载导入Excel模板")]
         [HttpGet, Route("DownLoadTemplate")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Import)]
+        [ApiActionPermission(ActionPermissionOptions.Import)]
         [ApiExplorerSettings(IgnoreApi = true)]
         public virtual ActionResult DownLoadTemplate()
         {
-            _baseWebResponseContent = InvokeService("DownLoadTemplate", new object[] { }) as WebResponseContent;
+            _baseWebResponseContent = InvokeService("DownLoadTemplate", []) as WebResponseContent;
+            return GetFile();
+        }
+        [ActionLog("下载导入Excel模板")]
+        [HttpGet, Route("downLoadTemplateAsync")]
+        [ApiActionPermission(ActionPermissionOptions.Import)]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<ActionResult> DownLoadTemplateAsync()
+        {
+            _baseWebResponseContent = await (InvokeService("DownLoadTemplateAsync", []) as Task<WebResponseContent>);
+            return GetFile();
+        }
+        private ActionResult GetFile()
+        {
             if (!_baseWebResponseContent.Status) return Json(_baseWebResponseContent);
-            byte[] fileBytes = System.IO.File.ReadAllBytes(_baseWebResponseContent.Data.ToString());
-            return File(
-                    fileBytes,
-                    System.Net.Mime.MediaTypeNames.Application.Octet,
-                    Path.GetFileName(_baseWebResponseContent.Data.ToString())
-                );
+            byte[] bytes = _baseWebResponseContent.Data is byte[]? (byte[])_baseWebResponseContent.Data
+                : System.IO.File.ReadAllBytes(_baseWebResponseContent.Data.ToString());
+            return File(bytes, System.Net.Mime.MediaTypeNames.Application.Octet, Path.GetFileName(_baseWebResponseContent.Data.ToString()));
         }
         /// <summary>
         /// 导入表数据Excel
@@ -93,11 +130,23 @@ namespace VOL.Core.Controllers.Basic
         /// <returns></returns>
         [ActionLog("导入Excel")]
         [HttpPost, Route("Import")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Import)]
+        [ApiActionPermission(ActionPermissionOptions.Import)]
         [ApiExplorerSettings(IgnoreApi = true)]
         public virtual ActionResult Import(List<IFormFile> fileInput)
         {
-            return Json(InvokeService("Import", new object[] { fileInput }));
+            var res = InvokeService("Import", [fileInput]) as WebResponseContent;
+            if (!res.Status) return Json(res);
+            return JsonNormal(new { status = res.Status, code = res.Code, data = res.Data });
+        }
+        [ActionLog("导入Excel")]
+        [HttpPost, Route("importAsync")]
+        [ApiActionPermission(ActionPermissionOptions.Import)]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<ActionResult> ImportAsync(List<IFormFile> fileInput)
+        {
+            var res = await (InvokeService("ImportAsync", [fileInput]) as Task<WebResponseContent>);
+            if (!res.Status) return Json(res);
+            return JsonNormal(new { status = res.Status, code = res.Code, data = res.Data });
         }
 
         /// <summary>
@@ -106,19 +155,29 @@ namespace VOL.Core.Controllers.Basic
         /// <param name="loadData"></param>
         /// <returns></returns>
         [ActionLog("导出Excel")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Export)]
+        [ApiActionPermission(ActionPermissionOptions.Export)]
         [ApiExplorerSettings(IgnoreApi = true)]
         [HttpPost, Route("Export")]
         public virtual ActionResult Export([FromBody] PageDataOptions loadData)
         {
-            var result = InvokeService("Export", new object[] { loadData }) as WebResponseContent;
-            return File(
-                   System.IO.File.ReadAllBytes(result.Data.ToString().MapPath()),
-                   System.Net.Mime.MediaTypeNames.Application.Octet,
-                   Path.GetFileName(result.Data.ToString())
-               );
+            _baseWebResponseContent = InvokeService("Export", [loadData]) as WebResponseContent;
+            return GetExportFile();
         }
-
+        [ActionLog("导出Excel")]
+        [ApiActionPermission(ActionPermissionOptions.Export)]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        [HttpPost, Route("exportAsync")]
+        public virtual async Task<ActionResult> ExportAsync([FromBody] PageDataOptions loadData)
+        {
+            _baseWebResponseContent = await (InvokeService("ExportAsync", [loadData]) as Task<WebResponseContent>);
+            return GetExportFile();
+        }
+        private FileContentResult GetExportFile()
+        {
+            byte[] bytes = _baseWebResponseContent.Data is byte[]? (byte[])_baseWebResponseContent.Data
+             : System.IO.File.ReadAllBytes(_baseWebResponseContent.Data.ToString().MapPath());
+            return File(bytes, System.Net.Mime.MediaTypeNames.Application.Octet, "export.xlsx");
+        }
 
         /// <summary>
         /// 通过key删除文件
@@ -126,13 +185,23 @@ namespace VOL.Core.Controllers.Basic
         /// <param name="keys"></param>
         /// <returns></returns>
        // [ActionLog("删除")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Delete)]
+        [ApiActionPermission(ActionPermissionOptions.Delete)]
         [HttpPost, Route("Del")]
         [ApiExplorerSettings(IgnoreApi = true)]
         public virtual ActionResult Del([FromBody] object[] keys)
         {
-            _baseWebResponseContent = InvokeService("Del", new object[] { keys, true }) as WebResponseContent;
-            Logger.Info(Enums.LoggerType.Del, keys.Serialize(), _baseWebResponseContent.Status ? "Ok" : _baseWebResponseContent.Message);
+            _baseWebResponseContent = InvokeService("Del", [keys, true]) as WebResponseContent;
+            Logger.Info(LoggerType.Del, keys.Serialize(), _baseWebResponseContent.Status ? "Ok" : _baseWebResponseContent.Message);
+            return Json(_baseWebResponseContent);
+        }
+        //[ActionLog("删除")]
+        [ApiActionPermission(ActionPermissionOptions.Delete)]
+        [HttpPost, Route("delAsync")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<ActionResult> DelAsync([FromBody] object[] keys)
+        {
+            _baseWebResponseContent = await (InvokeService("DelAsync", [keys, true]) as Task<WebResponseContent>);
+            Logger.Info(LoggerType.Del, keys.Serialize(), _baseWebResponseContent.Status ? "Ok" : _baseWebResponseContent.Message);
             return Json(_baseWebResponseContent);
         }
         /// <summary>
@@ -141,30 +210,51 @@ namespace VOL.Core.Controllers.Basic
         /// <param name="keys"></param>
         /// <returns></returns>
         /// [ActionLog("审核")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Audit)]
+        [ApiActionPermission(ActionPermissionOptions.Audit)]
         [HttpPost, Route("Audit")]
         [ApiExplorerSettings(IgnoreApi = true)]
         public virtual ActionResult Audit([FromBody] object[] id, int? auditStatus, string auditReason)
         {
-            _baseWebResponseContent = InvokeService("Audit", new object[] { id, auditStatus, auditReason }) as WebResponseContent;
-            Logger.Info(Enums.LoggerType.Del, id?.Serialize() + "," + (auditStatus ?? -1) + "," + auditReason, _baseWebResponseContent.Status ? "Ok" : _baseWebResponseContent.Message);
+            _baseWebResponseContent = InvokeService("Audit", [id, auditStatus, auditReason]) as WebResponseContent;
+            string msg = _baseWebResponseContent.Status ? ("Ok") : _baseWebResponseContent.Message;
+            Logger.Info($"审核：{id?.Serialize() + "," + (auditStatus ?? -1) + "," + auditReason};{msg}");
             return Json(_baseWebResponseContent);
         }
+        [ApiActionPermission(ActionPermissionOptions.Audit)]
+        [HttpPost, Route("auditAsync")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<ActionResult> AuditAsync([FromBody] object[] id, int? auditStatus, string auditReason)
+        {
+            _baseWebResponseContent = await (InvokeService("AuditAsync", [id, auditStatus, auditReason]) as Task<WebResponseContent>);
+            string msg = _baseWebResponseContent.Status ? ("Ok") : _baseWebResponseContent.Message;
+            Logger.Info($"审核：{id?.Serialize() + "," + (auditStatus ?? -1) + "," + auditReason};{msg}");
+            return Json(_baseWebResponseContent);
+        }
+
         /// <summary>
         /// 新增支持主子表
         /// </summary>
         /// <param name="saveDataModel"></param>
         /// <returns></returns>
         [ActionLog("新建")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Add)]
+        [ApiActionPermission(ActionPermissionOptions.Add)]
         [HttpPost, Route("Add")]
         [ApiExplorerSettings(IgnoreApi = true)]
         public virtual ActionResult Add([FromBody] SaveModel saveModel)
         {
-            _baseWebResponseContent = InvokeService("Add",
-                new Type[] { typeof(SaveModel) },
-                new object[] { saveModel }) as WebResponseContent;
-            Logger.Info(Enums.LoggerType.Add, null, _baseWebResponseContent.Status ? "Ok" : _baseWebResponseContent.Message);
+            _baseWebResponseContent = InvokeService("Add", [saveModel]) as WebResponseContent;
+            WriteLog(LoggerType.Add);
+            _baseWebResponseContent.Data = _baseWebResponseContent.Data?.Serialize();
+            return Json(_baseWebResponseContent);
+        }
+        [ActionLog("新建")]
+        [ApiActionPermission(ActionPermissionOptions.Add)]
+        [HttpPost, Route("addAsync")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<ActionResult> AddAsync([FromBody] SaveModel saveModel)
+        {
+            _baseWebResponseContent = await (InvokeService("AddAsync", [saveModel]) as Task<WebResponseContent>);
+            WriteLog(LoggerType.Add);
             _baseWebResponseContent.Data = _baseWebResponseContent.Data?.Serialize();
             return Json(_baseWebResponseContent);
         }
@@ -175,17 +265,31 @@ namespace VOL.Core.Controllers.Basic
         /// <param name="saveDataModel"></param>
         /// <returns></returns>
         [ActionLog("编辑")]
-        [ApiActionPermission(Enums.ActionPermissionOptions.Update)]
+        [ApiActionPermission(ActionPermissionOptions.Update)]
         [HttpPost, Route("Update")]
         [ApiExplorerSettings(IgnoreApi = true)]
         public virtual ActionResult Update([FromBody] SaveModel saveModel)
         {
-            _baseWebResponseContent = InvokeService("Update", new object[] { saveModel }) as WebResponseContent;
-            Logger.Info(Enums.LoggerType.Edit, null, _baseWebResponseContent.Status ? "Ok" : _baseWebResponseContent.Message);
+            _baseWebResponseContent = InvokeService("Update", [saveModel]) as WebResponseContent;
+            WriteLog(LoggerType.Edit);
             _baseWebResponseContent.Data = _baseWebResponseContent.Data?.Serialize();
             return Json(_baseWebResponseContent);
         }
-
+        [ActionLog("编辑")]
+        [ApiActionPermission(ActionPermissionOptions.Update)]
+        [HttpPost, Route("updateAsync")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<ActionResult> UpdateAsync([FromBody] SaveModel saveModel)
+        {
+            _baseWebResponseContent = await (InvokeService("UpdateAsync", [saveModel]) as Task<WebResponseContent>);
+            WriteLog(LoggerType.Edit);
+            _baseWebResponseContent.Data = _baseWebResponseContent.Data?.Serialize();
+            return Json(_baseWebResponseContent);
+        }
+        private void WriteLog(LoggerType loggerType)
+        {
+            Logger.Info(loggerType, null, _baseWebResponseContent.Status ? "Ok" : _baseWebResponseContent.Message);
+        }
         /// <summary>
         /// 调用service方法
         /// </summary>
@@ -195,17 +299,6 @@ namespace VOL.Core.Controllers.Basic
         private object InvokeService(string methodName, object[] parameters)
         {
             return Service.GetType().GetMethod(methodName).Invoke(Service, parameters);
-        }
-        /// <summary>
-        /// 调用service方法
-        /// </summary>
-        /// <param name="methodName"></param>
-        /// <param name="types">为要调用重载的方法参数类型：new Type[] { typeof(SaveDataModel)</param>
-        /// <param name="parameters"></param>
-        /// <returns></returns>
-        private object InvokeService(string methodName, Type[] types, object[] parameters)
-        {
-            return Service.GetType().GetMethod(methodName, types).Invoke(Service, parameters);
         }
     }
 }

@@ -65,7 +65,7 @@ namespace VOL.Core.Filters
             //    Console.Write($"IsAuthenticated:{context.HttpContext.User.Identity.IsAuthenticated}," +
             //        $"userToken{UserContext.Current.Token}" +
             //        $"BootstrapContext:{((ClaimsIdentity)context.HttpContext.User.Identity)?.BootstrapContext?.ToString()}");
-            //    context.Unauthorized("登陆已过期".Translator());
+            //    context.Unauthorized("登陆已过期");
             //    return;
             //}
 

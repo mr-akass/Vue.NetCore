@@ -27,6 +27,10 @@ const dataConfig = () => {
     }),
     menuOptions: ref([]),
     navMenuList: reactive([]),
+    topNavRowRef: ref(null),
+    topNavMeasureRef: ref(null),
+    topNavVisibleList: ref([]),
+    topNavOverflowList: ref([]),
     menuData: reactive([]),
     visibleItem: reactive({
       left: false,

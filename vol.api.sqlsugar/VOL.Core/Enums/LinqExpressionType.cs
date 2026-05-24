@@ -19,6 +19,12 @@ namespace VOL.Core.Enums
         LikeStart,
         LikeEnd,
         NotLike,
-        NotContains//NotContains
+        NotContains,//NotContains
+        Null,
+        NotNull,
+        Empty,
+        NotEmpty,
+        NullOrEmpty,
+        NotNullOrEmpty
     }
 }

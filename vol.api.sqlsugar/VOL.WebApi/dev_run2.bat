@@ -1,4 +1,4 @@
-dotnet watch run --framework net6.0
+dotnet watch run --framework net10.0
 
 
 

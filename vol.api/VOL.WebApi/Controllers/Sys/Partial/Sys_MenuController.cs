@@ -1,7 +1,9 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using System.Linq;
 using System.Threading.Tasks;
 using VOL.Core.Enums;
 using VOL.Core.Filters;
+using VOL.Core.UserManager;
 using VOL.Entity.DomainModels;
 using VOL.Sys.IServices;
 
@@ -9,15 +11,15 @@ namespace VOL.Sys.Controllers
 {
     public partial class Sys_MenuController
     {
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <returns></returns>
         [HttpGet, HttpPost, Route("getTreeMenu")]
-        // [ApiActionPermission("Sys_Menu", ActionPermissionOptions.Search)]
         public IActionResult GetTreeMenu()
         {
-            return Json( _service.GetCurrentMenuActionList());
+            var menu = _service.GetCurrentMenuActionList();
+            return Json(new
+            {
+                menu,
+                asyncApi = TableColumnContext.TableInfo.Where(x => x.AsyncApi == 1).Select(s => s.TableName).ToList(),
+            });
         }
         [HttpPost, Route("getMenu")]
         [ApiActionPermission("Sys_Menu", ActionPermissionOptions.Search)]

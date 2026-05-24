@@ -37,7 +37,7 @@ namespace VOL.Core.Middleware
                 if (endpoint != null && endpoint is RouteEndpoint routeEndpoint)
                 {
                     ActionLog log = endpoint.Metadata.GetMetadata<ActionLog>();
-                    if (log != null && log.Write)
+                    if (log == null || (log != null && log.Write))
                     {
                         Logger.Add(log?.LogType, null, null, null, status: LoggerStatus.Info);
                     }

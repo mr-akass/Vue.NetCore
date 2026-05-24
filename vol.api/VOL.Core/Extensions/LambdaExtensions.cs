@@ -1,9 +1,12 @@
-﻿using System;
+﻿using Npgsql.EntityFrameworkCore.PostgreSQL.Query.Expressions;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using VOL.Core.Const;
 using VOL.Core.Enums;
+using VOL.Entity.DomainModels;
 
 namespace VOL.Core.Extensions
 {
@@ -35,6 +38,10 @@ namespace VOL.Core.Extensions
             if (page <= 0)
             {
                 page = 1;
+            }
+            if (size<=0)
+            {
+                size = 30;
             }
             return queryable.GetIQueryableOrderBy(orderBy.GetExpressionToDic())
                   .Skip((page - 1) * size)
@@ -178,6 +185,137 @@ namespace VOL.Core.Extensions
                 return Expression.Lambda<Func<T, bool>>(methodCall, parameter);
             }
         }
+
+        public static bool CheckFilterNullExpression(this LinqExpressionType filterType)
+        {
+            switch (filterType)
+            {
+                case LinqExpressionType.Empty:
+                case LinqExpressionType.NotEmpty:
+                case LinqExpressionType.Null:
+                case LinqExpressionType.NotNull:
+                case LinqExpressionType.NullOrEmpty:
+                case LinqExpressionType.NotNullOrEmpty:
+                    return true;
+            }
+            return false;
+        }
+        // 核心：创建与目标类型兼容的null常量表达式
+        private static ConstantExpression CreateNullConstant(Type targetType)
+        {
+            if (!targetType.IsValueType)
+            {
+                return Expression.Constant(null, targetType);
+            }
+            if (targetType.IsGenericType && targetType.GetGenericTypeDefinition() == typeof(Nullable<>))
+            {
+                // 可空类型的null常量需用默认值（底层类型为null）
+                return Expression.Constant(null, targetType);
+            }
+
+            throw new InvalidOperationException($"非可空值类型 {targetType} 不支持null常量");
+        }
+        /// <summary>
+        /// 根据条件类型生成相应的查询表达式
+        /// </summary>
+        /// <typeparam name="T">实体类型</typeparam>
+        /// <param name="propertyName">属性名称</param>
+        /// <param name="conditionType">条件类型</param>
+        /// <returns>生成的查询表达式</returns>
+        public static Expression<Func<T, bool>> GenerateEmptyCondition<T>(
+            string propertyName,
+            LinqExpressionType conditionType)
+        {
+            // 获取属性信息并验证
+            PropertyInfo propertyInfo = typeof(T).GetProperty(propertyName);
+
+            Type propertyType = propertyInfo.PropertyType;
+
+            // 检查字符串专属条件是否应用在字符串属性上
+            bool isStringCondition =
+                conditionType == LinqExpressionType.Empty ||
+                conditionType == LinqExpressionType.NotEmpty ||
+                conditionType == LinqExpressionType.NotNullOrEmpty;
+
+            if (isStringCondition && propertyType != typeof(string))
+            {
+                throw new InvalidOperationException(
+                    $"条件类型 {conditionType} 仅适用于字符串类型的属性，不能用于 {propertyType} 类型");
+            }
+
+            // 创建参数表达式 (x => ... 中的 x)
+            ParameterExpression parameter = Expression.Parameter(typeof(T), "x");
+            // 创建属性访问表达式 (x.PropertyName)
+            MemberExpression property = Expression.Property(parameter, propertyInfo);
+
+            Expression conditionExpression;
+
+            switch (conditionType)
+            {
+                case LinqExpressionType.Empty:
+                    // x.PropertyName == "" (仅适用于字符串)
+                    conditionExpression = Expression.Equal(
+                        property,
+                        Expression.Constant("", typeof(string))
+                    );
+                    break;
+
+                case LinqExpressionType.Null:
+                    // x.PropertyName == null
+                    if (typeof(string) == propertyType)
+                    {
+                        conditionExpression = Expression.Equal(
+                      property,
+                      Expression.Constant(null, propertyType.IsValueType ? typeof(object) : propertyType)
+                      );
+                    }
+                    else
+                    {
+                        conditionExpression = Expression.Equal(property, CreateNullConstant(propertyType));
+                    }
+                    break;
+
+                case LinqExpressionType.NotEmpty:
+                case LinqExpressionType.NotNullOrEmpty:
+                    // x.PropertyName != "" (仅适用于字符串)
+                    var notNull = Expression.NotEqual(property, Expression.Constant(null, typeof(string)));
+                    var notEmpty = Expression.NotEqual(property, Expression.Constant("", typeof(string)));
+                    conditionExpression = Expression.AndAlso(notNull, notEmpty);
+                    break;
+
+                case LinqExpressionType.NotNull:
+                    // x.PropertyName != null
+                    if (typeof(string) == propertyType)
+                    {
+                        conditionExpression = Expression.NotEqual(
+                        property,
+                        Expression.Constant(null, propertyType.IsValueType ? typeof(object) : propertyType)
+                    );
+                    }
+                    else
+                    {
+                        conditionExpression = Expression.NotEqual(property, CreateNullConstant(propertyType));
+                    }
+                    break;
+
+                case LinqExpressionType.NullOrEmpty:
+                    // !string.IsNullOrEmpty(x.PropertyName) (仅适用于字符串)
+                    var isNull = Expression.Equal(property, Expression.Constant(null, typeof(string)));
+                    var isEmpty = Expression.Equal(property, Expression.Constant("", typeof(string)));
+                    conditionExpression = Expression.OrElse(isNull, isEmpty);
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(conditionType),
+                        "不支持的条件类型"
+                    );
+            }
+
+            // 创建并返回lambda表达式
+            return Expression.Lambda<Func<T, bool>>(conditionExpression, parameter);
+        }
+
+
         /// <summary>
         /// 
         /// </summary>
@@ -194,6 +332,12 @@ namespace VOL.Core.Extensions
           LinqExpressionType expressionType,
           bool checkNullProperty = false)
         {
+            //空或者null查询
+            if (expressionType.CheckFilterNullExpression())
+            {
+                return GenerateEmptyCondition<T>(propertyName, expressionType);
+            }
+
             Type proType = typeof(T).GetProperty(propertyName).PropertyType;
 
 
@@ -214,7 +358,6 @@ namespace VOL.Core.Extensions
             parameter = parameter ?? Expression.Parameter(typeof(T), "p");
 
             Expression<Func<T, bool>> expression = null;
-
 
 
             //创建节点的属性p=>p.name 属性name

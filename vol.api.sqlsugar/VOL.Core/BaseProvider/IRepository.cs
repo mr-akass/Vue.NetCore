@@ -1,11 +1,7 @@
-﻿using Microsoft.Data.SqlClient;
-using Microsoft.EntityFrameworkCore.Query;
-using OfficeOpenXml.FormulaParsing.Excel.Functions.Text;
-using SqlSugar;
+﻿using SqlSugar;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using System.Linq;
 using System.Linq.Expressions;
 using System.Threading.Tasks;
 using VOL.Core.DbContext;
@@ -15,13 +11,13 @@ using VOL.Entity.SystemModels;
 
 namespace VOL.Core.BaseProvider
 {
-    public interface IRepository<TEntity> where TEntity : BaseEntity
+    public interface IRepository<TEntity> : IRepositoryDbContext where TEntity : BaseEntity
     {
 
-        VOLContext VOLContext { get; }
+        BaseDbContext BaseDbContext { get; }
 
         /// <summary>
-        /// EF DBContext
+        /// DBContext
         /// </summary>
         ISqlSugarClient DbContext { get; }
 
@@ -34,6 +30,7 @@ namespace VOL.Core.BaseProvider
         /// <returns></returns>
         WebResponseContent DbContextBeginTransaction(Func<WebResponseContent> action);
 
+        Task<WebResponseContent> DbContextBeginTransactionAsync(Func<Task<WebResponseContent>> action);
 
         /// <summary>
         /// 
@@ -57,7 +54,7 @@ namespace VOL.Core.BaseProvider
         /// <returns></returns>
         TEntity FindFirst(Expression<Func<TEntity, bool>> predicate, bool filterDeleted = true);
 
-    
+        ISugarQueryable<TEntity> WhereIF([NotNull] Expression<Func<TEntity, object>> field, string value, LinqExpressionType linqExpression = LinqExpressionType.Equal);
 
         /// <summary>
         ///  if判断查询
@@ -79,7 +76,7 @@ namespace VOL.Core.BaseProvider
         /// <param name="checkCondition"></param>
         /// <param name="predicate"></param>
         /// <returns></returns>
-        ISugarQueryable<T> WhereIF<T>(bool checkCondition, Expression<Func<T, bool>> predicate) where T : class;
+        ISugarQueryable<T> WhereIF<T>(bool checkCondition, Expression<Func<T, bool>> predicate) where T : class, new();
         /// <summary>
         /// 
         /// </summary>
@@ -91,7 +88,7 @@ namespace VOL.Core.BaseProvider
         ///         };
         /// </param>
         /// <returns></returns>
-        ISugarQueryable<TEntity> FindAsIQueryable(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy = null);
+        ISugarQueryable<TEntity> FindAsIQueryable(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy = null, bool filterDeleted = true);
         /// <summary>
         /// 通过条件查询数据
         /// </summary>
@@ -110,7 +107,7 @@ namespace VOL.Core.BaseProvider
         /// <param name="predicate"></param>
         /// <param name="filterDeleted">是否过滤逻辑删除的数据，默认过</param>
         /// <returns></returns>
-        List<TFind> Find<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class;
+        List<TFind> Find<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class, new();
         /// <summary>
         /// 
         /// </summary>
@@ -118,7 +115,7 @@ namespace VOL.Core.BaseProvider
         /// <param name="predicate"></param>
         /// <param name="filterDeleted">是否过滤逻辑删除的数据，默认过</param>
         /// <returns></returns>
-        Task<TFind> FindAsyncFirst<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class;
+        Task<TFind> FindAsyncFirst<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class, new();
 
         /// <summary>
         /// 
@@ -134,7 +131,7 @@ namespace VOL.Core.BaseProvider
         /// <param name="predicate"></param>
         /// <param name="filterDeleted">是否过滤逻辑删除的数据，默认过</param>
         /// <returns></returns>
-        Task<List<TFind>> FindAsync<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class;
+        Task<List<TFind>> FindAsync<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class, new();
 
         /// <summary>
         /// 
@@ -191,7 +188,7 @@ namespace VOL.Core.BaseProvider
         /// <param name="predicate"></param>
         /// <param name="filterDeleted">是否过滤逻辑删除的数据，默认过</param>
         /// <returns></returns>
-        bool Exists<TExists>(Expression<Func<TExists, bool>> predicate, bool filterDeleted = true) where TExists : class;
+        bool Exists<TExists>(Expression<Func<TExists, bool>> predicate, bool filterDeleted = true) where TExists : class, new();
         /// <summary>
         /// 
         /// </summary>
@@ -199,13 +196,14 @@ namespace VOL.Core.BaseProvider
         /// <param name="predicate"></param>
         /// <param name="filterDeleted">是否过滤逻辑删除的数据，默认过</param>
         /// <returns></returns>
-        Task<bool> ExistsAsync<TExists>(Expression<Func<TExists, bool>> predicate, bool filterDeleted = true) where TExists : class;
+        Task<bool> ExistsAsync<TExists>(Expression<Func<TExists, bool>> predicate, bool filterDeleted = true) where TExists : class, new();
 
-        ISugarQueryable<TEntity> Include<TProperty>(Expression<Func<TEntity, TProperty>> incluedProperty);
+        ISugarQueryable<TEntity> Include<TProperty>(Expression<Func<TEntity, TProperty>> incluedProperty) where TProperty : new();
 
 
 
-        ISugarQueryable<TFind> IQueryablePage<TFind>(int pageIndex, int pagesize, out int rowcount, Expression<Func<TFind, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy, bool returnRowCount = true) where TFind : class;
+
+        ISugarQueryable<TFind> IQueryablePage<TFind>(int pageIndex, int pagesize, out int rowcount, Expression<Func<TFind, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy, bool returnRowCount = true) where TFind : class, new();
 
 
         ISugarQueryable<TEntity> IQueryablePage(ISugarQueryable<TEntity> queryable, int pageIndex, int pagesize, out int rowcount, Dictionary<string, QueryOrderBy> orderBy, bool returnRowCount = true);

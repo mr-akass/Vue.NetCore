@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using System.IO;
 using VOL.Core.Const;
 using VOL.Core.Extensions;
+using Yitter.IdGenerator;
 
 namespace VOL.Core.Configuration
 {
@@ -56,13 +57,18 @@ namespace VOL.Core.Configuration
         /// </summary>
         public static int ExpMinutes { get; private set; } = 120;
 
-        public static string CurrentPath { get; private set; } = null;
-        public static string DownLoadPath { get { return CurrentPath + "\\Download\\"; } }
-
+        // 是否启用雪花ID
+        public static bool EnableSnowFlakeID { get; set; } = false;
         /// <summary>
         /// 是否显示sql日志
         /// </summary>
         public static bool ShowSqlLog { get; set; }
+        public static string CurrentPath { get; private set; } = null;
+        public static string DownLoadPath { get { return CurrentPath + "\\Download\\"; } }
+        /// <summary>
+        /// 国密 SM2/SM3/SM4（appsettings.json → GmCrypto）
+        /// </summary>
+        public static GmCryptoOptions GmCrypto { get; private set; }
         public static void Init(IServiceCollection services, IConfiguration configuration)
         {
             Configuration = configuration;
@@ -87,12 +93,22 @@ namespace VOL.Core.Configuration
 
             GlobalFilter.Actions = GlobalFilter.Actions ?? new string[0];
             Kafka = provider.GetRequiredService<IOptions<Kafka>>().Value ?? new Kafka();
+            GmCrypto = provider.GetRequiredService<IOptions<GmCryptoOptions>>().Value ?? new GmCryptoOptions();
 
             _connection = provider.GetRequiredService<IOptions<Connection>>().Value;
 
             ShowSqlLog = configuration["ShowSqlLog"] == "1";
 
+
             ExpMinutes = (configuration["ExpMinutes"] ?? "120").GetInt();
+
+            EnableSnowFlakeID = (configuration["EnableSnowFlakeID"] ?? "false").GetBool();
+
+            if (EnableSnowFlakeID)
+            {
+                var options = configuration.GetSection("SnowFlakeOptions").Get<Yitter.IdGenerator.IdGeneratorOptions>();
+                YitIdHelper.SetIdGenerator(options);
+            }
 
             DBType.Name = _connection.DBType;
             if (string.IsNullOrEmpty(_connection.DbConnectionString))
@@ -135,10 +151,10 @@ namespace VOL.Core.Configuration
         public bool UseSignalR { get; set; }
     }
 
-    public class CreateMember: TableDefaultColumns
+    public class CreateMember : TableDefaultColumns
     {
     }
-    public class ModifyMember: TableDefaultColumns
+    public class ModifyMember : TableDefaultColumns
     {
     }
 

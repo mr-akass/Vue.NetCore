@@ -54,12 +54,12 @@ namespace VOL.Sys.Services
                 //待审批
                 if (value == 0)
                 {
-                    expression = x => x.AuditStatus == (int)AuditStatus.审核中|| x.AuditStatus == (int)AuditStatus.待审核;
+                    expression = x => x.AuditStatus == (int)AuditStatus.审核中 || x.AuditStatus == (int)AuditStatus.待审核;
                 }
                 //已审批
                 else if (value == 1)
                 {
-                    expression = x => x.AuditStatus != (int)AuditStatus.审核中&&x.AuditStatus!= (int)AuditStatus.待审核;
+                    expression = x => x.AuditStatus != (int)AuditStatus.审核中 && x.AuditStatus != (int)AuditStatus.待审核;
                 } //我的提交
                 else if (value == 2)
                 {
@@ -72,13 +72,15 @@ namespace VOL.Sys.Services
                 if (!UserContext.Current.IsSuperAdmin)
                 {
                     var user = UserContext.Current.UserInfo;
+                    string userId = user.User_Id.ToString();
+                    string roleId = user.Role_Id.ToString();
                     //显示当前用户需要审批的数据
                     var deptIds = user.DeptIds.Select(s => s.ToString());
                     queryable = queryable.Where(c =>
                      SqlFunc.Subqueryable<Sys_WorkFlowTableStep>()
                      .Where(x => c.WorkFlowTable_Id == x.WorkFlowTable_Id
-                     && ((x.StepType == (int)AuditType.用户审批 && x.StepValue == user.User_Id.ToString())
-                             || (x.StepType == (int)AuditType.角色审批 && user.Role_Id.ToString().Contains(x.StepValue))
+                     && ((x.StepType == (int)AuditType.用户审批 && x.StepValue == userId)
+                             || (x.StepType == (int)AuditType.角色审批 && roleId == x.StepValue)
                              || (x.StepType == (int)AuditType.部门审批 && deptIds.Contains(x.StepValue)))
                      )
                      .Any());

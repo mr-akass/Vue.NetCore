@@ -12,8 +12,8 @@
     <ApplicationIcon />
     <OutputType>Library</OutputType>
     <StartupObject />
-    <AssemblyName>VolPro.Builder</AssemblyName>
-    <RootNamespace>VolPro.Builder</RootNamespace>
+    <AssemblyName>VOL.Builder</AssemblyName>
+    <RootNamespace>VOL.Builder</RootNamespace>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">

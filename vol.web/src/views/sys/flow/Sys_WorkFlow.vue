@@ -1,96 +1,104 @@
 <!--
-*Author：jxx
+ *Author：jxx
+ *Date：{Date}
  *Contact：283591387@qq.com
- *代码由框架生成,任何更改都可能导致被代码生成器覆盖
- *业务请在@/extension/system/flow/Sys_WorkFlow.js此处编写
+ *业务请在@/extension/sys/flow/Sys_WorkFlow.jsx或Sys_WorkFlow.vue文件编写
+ *新版本支持vue或【表.jsx]文件编写业务,文档见:https://doc.volcore.xyz/docs/view-grid、https://doc.volcore.xyz/docs/web
  -->
 <template>
-    <view-grid ref="grid"
-               :columns="columns"
-               :detail="detail"
-               :editFormFields="editFormFields"
-               :editFormOptions="editFormOptions"
-               :searchFormFields="searchFormFields"
-               :searchFormOptions="searchFormOptions"
-               :table="table"
-               :extend="extend">
-    </view-grid>
+  <view-grid ref="grid" :columns="columns" :detail="detail" :details="details" :editFormFields="editFormFields"
+    :editFormOptions="editFormOptions" :searchFormFields="searchFormFields" :searchFormOptions="searchFormOptions"
+    :table="table" :extend="extend" :onInit="onInit" :onInited="onInited" :searchBefore="searchBefore"
+    :searchAfter="searchAfter" :addBefore="addBefore" :updateBefore="updateBefore" :rowClick="rowClick"
+    :modelOpenBefore="modelOpenBefore" :modelOpenAfter="modelOpenAfter" :modelOpenBeforeAsync="modelOpenBeforeAsync">
+    <!-- 自定义组件数据槽扩展，更多数据槽slot见文档 -->
+    <template #gridHeader>
+      <grid-header @parentCall="parentCall" ref="headerRef"></grid-header>
+    </template>
+  </view-grid>
 </template>
-<script>
-    import extend from "@/extension/sys/flow/Sys_WorkFlow.jsx";
-    import { ref, defineComponent } from "vue";
-    export default defineComponent({
-        setup() {
-            const table = ref({
-                key: 'WorkFlow_Id',
-                footer: "Foots",
-                cnName: '审批流程配置',
-                name: 'flow/Sys_WorkFlow',
-                url: "/Sys_WorkFlow/",
-                sortName: "CreateDate"
-            });
-            const editFormFields = ref({"WorkName":"","WorkTable":"","Remark":""});
-            const editFormOptions = ref([[{"title":"流程名称","required":true,"field":"WorkName"},
-                               {"title":"表名","required":true,"field":"WorkTable"},
-                               {"title":"备注","field":"Remark"}]]);
-            const searchFormFields = ref({"WorkName":"","WorkTable":"","AuditingEdit":"","CreateDate":""});
-            const searchFormOptions = ref([[{"title":"流程名称","field":"WorkName"},{"title":"表名","field":"WorkTable"},{"dataKey":"enable","data":[],"title":"同步更新审批业务数据","field":"AuditingEdit","type":"select"},{"title":"创建时间","field":"CreateDate","type":"datetime"}]]);
-            const columns = ref([{field:'WorkFlow_Id',title:'WorkFlow_Id',type:'guid',width:110,hidden:true,readonly:true,require:true,align:'left'},
-                       {field:'WorkName',title:'流程名称',type:'string',link:true,width:140,require:true,align:'left',sort:true},
-                       {field:'WorkTable',title:'表名',type:'string',width:100,require:true,align:'left'},
-                       {field:'WorkTableName',title:'功能菜单',type:'string',width:120,align:'left'},
-                       {field:'Weight',title:'权重(相同条件权重大的优先匹配)',type:'int',width:100,align:'left'},
-                       {field:'Enable',title:'是否启用',type:'byte',bind:{ key:'enable',data:[]},width:100,hidden:true,align:'left'},
-                       {field:'AuditingEdit',title:'同步更新审批业务数据',type:'int',bind:{ key:'enable',data:[]},width:80,align:'left'},
-                       {field:'NodeConfig',title:'节点信息',type:'string',width:110,hidden:true,align:'left'},
-                       {field:'LineConfig',title:'连接配置',type:'string',width:110,hidden:true,align:'left'},
-                       {field:'Remark',title:'备注',type:'string',width:130,align:'left'},
-                       {field:'CreateID',title:'CreateID',type:'int',width:80,hidden:true,align:'left'},
-                       {field:'Creator',title:'创建人',type:'string',width:100,align:'left'},
-                       {field:'CreateDate',title:'创建时间',type:'datetime',width:150,align:'left',sort:true},
-                       {field:'ModifyID',title:'ModifyID',type:'int',width:80,hidden:true,align:'left'},
-                       {field:'Modifier',title:'修改人',type:'string',width:100,hidden:true,align:'left'},
-                       {field:'ModifyDate',title:'修改时间',type:'datetime',width:160,align:'left',sort:true}]);
-            const detail = ref({
-                cnName: "审批节点配置",
-                table: "Sys_WorkFlowStep",
-                columns: [{field:'WorkStepFlow_Id',title:'WorkStepFlow_Id',type:'guid',width:110,hidden:true,readonly:true,require:true,align:'left'},
-                       {field:'WorkFlow_Id',title:'流程主表id',type:'guid',width:110,align:'left',sort:true},
-                       {field:'StepId',title:'流程节点Id',type:'string',width:120,align:'left'},
-                       {field:'StepName',title:'节点名称',type:'string',width:110,align:'left'},
-                       {field:'StepType',title:'节点类型(1=按用户审批,2=按角色审批)',type:'int',width:110,align:'left'},
-                       {field:'StepValue',title:'审批用户id或角色id',type:'string',width:110,align:'left'},
-                       {field:'Remark',title:'备注',type:'string',width:220,align:'left'},
-                       {field:'OrderId',title:'审批顺序',type:'int',width:80,align:'left'},
-                       {field:'CreateDate',title:'创建时间',type:'datetime',width:110,align:'left',sort:true},
-                       {field:'CreateID',title:'CreateID',type:'int',width:80,hidden:true,align:'left'},
-                       {field:'Creator',title:'创建人',type:'string',width:130,align:'left'},
-                       {field:'Enable',title:'Enable',type:'byte',width:110,align:'left'},
-                       {field:'Modifier',title:'修改人',type:'string',width:130,align:'left'},
-                       {field:'ModifyDate',title:'修改时间',type:'datetime',width:110,align:'left',sort:true},
-                       {field:'ModifyID',title:'ModifyID',type:'int',width:80,hidden:true,align:'left'},
-                       {field:'NextStepIds',title:'下一个审批节点',type:'string',width:220,hidden:true,align:'left'},
-                       {field:'ParentId',title:'父级节点',type:'string',width:120,hidden:true,align:'left'},
-                       {field:'AuditRefuse',title:'审核未通过(返回上一节点,流程重新开始,流程结束)',type:'int',width:80,hidden:true,align:'left'},
-                       {field:'AuditBack',title:'驳回(返回上一节点,流程重新开始,流程结束)',type:'int',width:80,hidden:true,align:'left'},
-                       {field:'AuditMethod',title:'审批方式(启用会签)',type:'int',width:80,hidden:true,align:'left'},
-                       {field:'SendMail',title:'审核后发送邮件通知',type:'int',width:80,hidden:true,align:'left'},
-                       {field:'Filters',title:'审核条件',type:'string',width:220,hidden:true,align:'left'},
-                       {field:'StepAttrType',title:'节点属性(start、node、end))',type:'string',width:110,hidden:true,align:'left'},
-                       {field:'Weight',title:'权重(相同条件权重大的优先匹配)',type:'int',width:80,align:'left'}],
-                sortName: "CreateDate",
-                key: "WorkStepFlow_Id"
-            });
-            return {
-                table,
-                extend,
-                editFormFields,
-                editFormOptions,
-                searchFormFields,
-                searchFormOptions,
-                columns,
-                detail,
-            };
-        },
-    });
+<script setup lang="jsx">
+import extend from "@/extension/sys/flow/Sys_WorkFlow.jsx";
+import viewOptions from "./Sys_WorkFlow/options.js";
+import gridHeader from './Sys_WorkFlow/WorkFlowGridHeader.vue';
+import { ref, reactive, getCurrentInstance, watch, onMounted } from "vue";
+const grid = ref(null);
+const { proxy } = getCurrentInstance();
+const headerRef = ref(null)
+//http请求，proxy.http.post/get
+const {
+  table,
+  editFormFields,
+  editFormOptions,
+  searchFormFields,
+  searchFormOptions,
+  columns,
+  detail,
+  details,
+} = reactive(viewOptions());
+
+let gridRef; //对应[表.jsx]文件中this.使用方式一样
+//生成对象属性初始化
+const onInit = async ($vm) => {
+  gridRef = $vm;
+  gridRef.queryFields = ['WorkName', 'WorkTableName']
+  columns.forEach((x) => {
+    if (x.field == "TitleTemplate") {
+      //开启表格内容超出提示信息
+      x.showOverflowTooltip = true;
+    }
+  });
+};
+//生成对象属性初始化后,操作明细表配置用到
+const onInited = async () => { };
+const searchBefore = async (param) => {
+  //界面查询前,可以给param.wheres添加查询参数
+  //返回false，则不会执行查询
+  return true;
+};
+const searchAfter = async (rows, result) => {
+  return true;
+};
+const addBefore = async (formData) => {
+  //新建保存前formData为对象，包括明细表，可以给给表单设置值，自己输出看formData的值
+  return true;
+};
+const updateBefore = async (formData) => {
+  //编辑保存前formData为对象，包括明细表、删除行的Id
+  return true;
+};
+const rowClick = ({ row, column, event }) => {
+  //查询界面点击行事件
+  // grid.value.toggleRowSelection(row); //单击行时选中当前行;
+};
+const modelOpenBefore = async (row) => {
+  //弹出框打开后方法
+  return true; //返回false，不会打开弹出框
+};
+const modelOpenAfter = (row, currentAction, isCopyClick) => {
+  // if (isCopyClick) {
+  //    editFormFields.NodeConfig=row.NodeConfig;
+  //         editFormFields.LineConfig=row.LineConfig;
+  // }
+  const isAdd = currentAction == 'Add';//判断是否为新建操作
+  //弹出框打开后方法，这可以设置表单默认
+  //editFormFields.字段=值 ;//更多默认值配置见【前端开发->编辑表单只读与默认值、必填】
+}
+const parentCall = () => {
+  gridRef.search();
+}
+const modelOpenBeforeAsync = (row,currentAction,isCopyClick) => {
+  //点击编辑/新建按钮弹出框前，可以在此处写逻辑，如，从后台获取数据
+  console.log(isCopyClick)
+  if (isCopyClick) {
+    row=Object.assign({},row)
+    row.WorkFlow_Id=undefined;
+  }
+  headerRef.value.open(row,isCopyClick);
+  return false;
+}
+//监听表单输入，做实时计算
+//watch(() => editFormFields.字段,(newValue, oldValue) => {	})
+//对外暴露数据
+defineExpose({});
 </script>

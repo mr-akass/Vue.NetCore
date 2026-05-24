@@ -99,7 +99,7 @@ export const showAudit = async (proxy, props, dataConfig, rows, isAnti, view) =>
   })
 }
 
-export const saveAuditClick = async (proxy, props, params, rows, callback) => {
+export const saveAuditClick = async (proxy, props, params, rows, callback,dataConfig) => {
   //保存审核
   let keys = rows.map((x) => {
     return x[props.table.key]
@@ -110,7 +110,7 @@ export const saveAuditClick = async (proxy, props, params, rows, callback) => {
   if (!(await proxy.auditBefore.call(proxy, keys, rows))) {
     return
   }
-  let url = `${getUrl(action.AUDIT, null, props.table)}?auditReason=${params.reason}&auditStatus=${
+  let url = `${getUrl(action.AUDIT, null, props.table,null,props,dataConfig.asyncApi.value)}?auditReason=${params.reason}&auditStatus=${
     params.value
   }`
   proxy.http.post(url, keys, 'loading....').then(async (x) => {

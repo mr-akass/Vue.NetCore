@@ -1,21 +1,24 @@
-﻿using Microsoft.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage;
-using OfficeOpenXml.FormulaParsing.Excel.Functions.Text;
+using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Data;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Threading.Tasks;
+using VOL.Core.Configuration;
 using VOL.Core.Dapper;
 using VOL.Core.DBManager;
 using VOL.Core.EFDbContext;
 using VOL.Core.Enums;
 using VOL.Core.Extensions;
+using VOL.Core.Services;
 using VOL.Core.Utilities;
 using VOL.Entity;
 using VOL.Entity.SystemModels;
@@ -27,22 +30,21 @@ namespace VOL.Core.BaseProvider
         public RepositoryBase()
         {
         }
-        public RepositoryBase(VOLContext dbContext)
+        public RepositoryBase(BaseDbContext dbContext)
         {
-            this.DefaultDbContext = dbContext ?? throw new Exception("dbContext未实例化。");
+            DefaultDbContext = dbContext ?? throw new Exception("dbContext未实例化。");
         }
 
-        private VOLContext DefaultDbContext { get; set; }
-        private VOLContext EFContext
+        private BaseDbContext DefaultDbContext { get; set; }
+        private BaseDbContext EFContext
         {
             get
             {
-                DBServerProvider.GetDbContextConnection<TEntity>(DefaultDbContext);
                 return DefaultDbContext;
             }
         }
 
-        public virtual VOLContext DbContext
+        public virtual BaseDbContext DbContext
         {
             get { return DefaultDbContext; }
         }
@@ -50,9 +52,14 @@ namespace VOL.Core.BaseProvider
         {
             get { return EFContext.Set<TEntity>(); }
         }
+        private ISqlDapper _dapper = null;
         public ISqlDapper DapperContext
         {
-            get { return DBServerProvider.GetSqlDapper<TEntity>(); }
+            get
+            {
+                _dapper ??= DBServerProvider.GetSqlDapper<TEntity>();
+                return _dapper;
+            }
         }
         /// <summary>
         /// 执行事务
@@ -61,142 +68,182 @@ namespace VOL.Core.BaseProvider
         /// <returns></returns>
         public virtual WebResponseContent DbContextBeginTransaction(Func<WebResponseContent> action)
         {
+            if (DefaultDbContext.Database.CurrentTransaction != null) return action();
             WebResponseContent webResponse = new WebResponseContent();
-            using (IDbContextTransaction transaction = DefaultDbContext.Database.BeginTransaction())
+            using IDbContextTransaction transaction = DefaultDbContext.Database.BeginTransaction();
+            try
             {
-                try
+                webResponse = action();
+                if (webResponse.Status)
                 {
-                    webResponse = action();
-                    if (webResponse.Status)
-                    {
-                        transaction.Commit();
-                    }
-                    else
-                    {
-                        transaction.Rollback();
-                    }
-
-                    return webResponse;
+                    transaction.Commit();
                 }
-                catch (Exception ex)
+                else
                 {
                     transaction.Rollback();
-                    return new WebResponseContent().Error(ex.Message);
                 }
+
+                return webResponse;
+            }
+            catch (Exception ex)
+            {
+                transaction.Rollback();
+                string message = ex.Message + ex?.InnerException + ex?.StackTrace;
+                if (HttpContext.Current.GetService<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>().IsDevelopment())
+                {
+                    return webResponse.Error(message);
+                }
+                Logger.Error(message);
+                return webResponse.Error("处理异常");
             }
         }
+        public virtual async Task<WebResponseContent> DbContextBeginTransactionAsync(Func<Task<WebResponseContent>> action)
+        {
+            if (DefaultDbContext.Database.CurrentTransaction != null) return await action();
+            WebResponseContent webResponse = new WebResponseContent();
+            using IDbContextTransaction transaction = await DefaultDbContext.Database.BeginTransactionAsync();
+            try
+            {
+                webResponse = await action();
+                if (webResponse.Status)
+                {
+                    await transaction.CommitAsync();
+                }
+                else
+                {
+                    await transaction.RollbackAsync();
+                }
 
-        public virtual bool Exists<TExists>(Expression<Func<TExists, bool>> predicate) where TExists : class
+                return webResponse;
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                string message = ex.Message + ex?.InnerException + ex?.StackTrace;
+                if (HttpContext.Current.GetService<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>().IsDevelopment())
+                {
+                    return webResponse.Error(message);
+                }
+                Logger.Error(message);
+                return webResponse.Error("处理异常");
+            }
+        }
+        public virtual bool Exists<TExists>(Expression<Func<TExists, bool>> predicate, bool filterDeleted = true) where TExists : class
         {
             return EFContext.Set<TExists>().Any(predicate);
         }
 
-        public virtual Task<bool> ExistsAsync<TExists>(Expression<Func<TExists, bool>> predicate) where TExists : class
+        public virtual Task<bool> ExistsAsync<TExists>(Expression<Func<TExists, bool>> predicate, bool filterDeleted = true) where TExists : class
         {
-            return EFContext.Set<TExists>().AnyAsync(predicate);
+            return EFContext.Set<TExists>(filterDeleted).AnyAsync(predicate);
         }
 
-        public virtual bool Exists(Expression<Func<TEntity, bool>> predicate)
+        public virtual bool Exists(Expression<Func<TEntity, bool>> predicate, bool filterDeleted = true)
         {
-            return DBSet.Any(predicate);
+            return EFContext.Set<TEntity>(filterDeleted).Any(predicate);
         }
 
-        public virtual Task<bool> ExistsAsync(Expression<Func<TEntity, bool>> predicate)
+        public virtual Task<bool> ExistsAsync(Expression<Func<TEntity, bool>> predicate, bool filterDeleted = true)
         {
-            return DBSet.AnyAsync(predicate);
+            return EFContext.Set<TEntity>(filterDeleted).AnyAsync(predicate);
         }
-        public virtual List<TFind> Find<TFind>(Expression<Func<TFind, bool>> predicate) where TFind : class
-        {
-            return EFContext.Set<TFind>().Where(predicate).ToList();
-        }
-
-        public virtual Task<TFind> FindAsyncFirst<TFind>(Expression<Func<TFind, bool>> predicate) where TFind : class
-        {
-            return FindAsIQueryable<TFind>(predicate).FirstOrDefaultAsync();
-        }
-
-        public virtual Task<TEntity> FindAsyncFirst(Expression<Func<TEntity, bool>> predicate)
-        {
-            return FindAsIQueryable<TEntity>(predicate).FirstOrDefaultAsync();
-        }
-
-        public virtual Task<List<TFind>> FindAsync<TFind>(Expression<Func<TFind, bool>> predicate) where TFind : class
-        {
-            return FindAsIQueryable<TFind>(predicate).ToListAsync();
-        }
-
-        public virtual Task<List<TEntity>> FindAsync(Expression<Func<TEntity, bool>> predicate)
-        {
-            return FindAsIQueryable(predicate).ToListAsync();
-        }
-
-        public virtual Task<TEntity> FindFirstAsync(Expression<Func<TEntity, bool>> predicate)
-        {
-            return FindAsIQueryable(predicate).FirstOrDefaultAsync();
-        }
-
-        public virtual Task<List<T>> FindAsync<T>(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, T>> selector)
-        {
-            return FindAsIQueryable(predicate).Select(selector).ToListAsync();
-        }
-
-        public virtual Task<T> FindFirstAsync<T>(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, T>> selector)
-        {
-            return FindAsIQueryable(predicate).Select(selector).FirstOrDefaultAsync();
-        }
-
-        public virtual IQueryable<TFind> FindAsIQueryable<TFind>(Expression<Func<TFind, bool>> predicate) where TFind : class
-        {
-            return EFContext.Set<TFind>().Where(predicate);
-        }
-
-        public virtual List<TEntity> Find<Source>(IEnumerable<Source> sources,
-            Func<Source, Expression<Func<TEntity, bool>>> predicate)
-            where Source : class
-        {
-            return FindAsIQueryable(sources, predicate).ToList();
-        }
-        public virtual List<TResult> Find<Source, TResult>(IEnumerable<Source> sources,
-              Func<Source, Expression<Func<TEntity, bool>>> predicate,
-              Expression<Func<TEntity, TResult>> selector)
-              where Source : class
-        {
-            return FindAsIQueryable(sources, predicate).Select(selector).ToList();
-        }
-
         /// <summary>
-        /// 多条件查询
+        /// 查询字段不为null或者为空
         /// </summary>
-        /// <typeparam name="Source"></typeparam>
-        /// <param name="sources"></param>
-        /// <param name="predicate"></param>
+        /// <param name="field">x=>new {x.字段}</param>
+        /// <param name="value">查询的类</param>
+        /// <param name="linqExpression">查询类型</param>
         /// <returns></returns>
-        public virtual IQueryable<TEntity> FindAsIQueryable<Source>(IEnumerable<Source> sources,
-            Func<Source, Expression<Func<TEntity, bool>>> predicate)
-            where Source : class
+        public virtual IQueryable<TEntity> WhereIF([NotNull] Expression<Func<TEntity, object>> field, string value, LinqExpressionType linqExpression = LinqExpressionType.Equal)
         {
-            // EFContext.ChangeTracker.QueryTrackingBehavior = QueryTrackingBehavior.TrackAll;
-            Expression<Func<TEntity, bool>> resultPredicate = x => 1 == 2;
-            foreach (Source source in sources)
-            {
-                Expression<Func<TEntity, bool>> expression = predicate(source);
-                resultPredicate = (resultPredicate).Or<TEntity>((expression));
-            }
-            return EFContext.Set<TEntity>().Where(resultPredicate);
+            return EFContext.Set<TEntity>().WhereNotEmpty(field, value, linqExpression);
         }
 
-        public virtual List<T> Find<T>(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, T>> selector)
+        public virtual IQueryable<TEntity> WhereIF(bool checkCondition, Expression<Func<TEntity, bool>> predicate)
         {
-            return DBSet.Where(predicate).Select(selector).ToList();
+            if (checkCondition)
+            {
+                return EFContext.Set<TEntity>().Where(predicate);
+            }
+            return EFContext.Set<TEntity>();
+        }
+
+        public virtual IQueryable<T> WhereIF<T>(bool checkCondition, Expression<Func<T, bool>> predicate) where T : class
+        {
+            if (checkCondition)
+            {
+                return EFContext.Set<T>().Where(predicate);
+            }
+            return EFContext.Set<T>();
+        }
+
+        public virtual TFind FindById<TFind>(object id) where TFind : class
+        {
+            return EFContext.FindById<TFind>(id);
+        }
+
+        public virtual async Task<TFind> FindByIdAsync<TFind>(List<object> id) where TFind : class
+        {
+            return await EFContext.FindByIdAsync<TFind>(id);
+        }
+        public virtual List<TFind> Find<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class
+        {
+            return EFContext.Set<TFind>(filterDeleted).Where(predicate).ToList();
+        }
+
+        public virtual Task<TFind> FindAsyncFirst<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class
+        {
+            return FindAsIQueryable(predicate, filterDeleted).FirstOrDefaultAsync();
+        }
+
+        public virtual Task<TEntity> FindAsyncFirst(Expression<Func<TEntity, bool>> predicate, bool filterDeleted = true)
+        {
+            return FindAsIQueryable<TEntity>(predicate, filterDeleted).FirstOrDefaultAsync();
+        }
+
+        public virtual Task<List<TFind>> FindAsync<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class
+        {
+            return FindAsIQueryable<TFind>(predicate, filterDeleted).ToListAsync();
+        }
+
+        public virtual Task<List<TEntity>> FindAsync(Expression<Func<TEntity, bool>> predicate, bool filterDeleted = true)
+        {
+            return FindAsIQueryable(predicate, filterDeleted).ToListAsync();
+        }
+
+        public virtual Task<TEntity> FindFirstAsync(Expression<Func<TEntity, bool>> predicate, bool filterDeleted = true)
+        {
+            return FindAsIQueryable(predicate, filterDeleted).FirstOrDefaultAsync();
+        }
+
+        public virtual Task<List<T>> FindAsync<T>(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, T>> selector, bool filterDeleted = true)
+        {
+            return FindAsIQueryable(predicate, filterDeleted).Select(selector).ToListAsync();
+        }
+
+        public virtual Task<T> FindFirstAsync<T>(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, T>> selector, bool filterDeleted = true)
+        {
+            return FindAsIQueryable(predicate, filterDeleted).Select(selector).FirstOrDefaultAsync();
+        }
+
+        private IQueryable<TFind> FindAsIQueryable<TFind>(Expression<Func<TFind, bool>> predicate, bool filterDeleted = true) where TFind : class
+        {
+            return EFContext.Set<TFind>(filterDeleted).Where(predicate);
+        }
+
+
+        public virtual List<T> Find<T>(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, T>> selector, bool filterDeleted = true)
+        {
+            return EFContext.Set<TEntity>(filterDeleted).Where(predicate).Select(selector).ToList();
         }
         /// <summary>
         /// 单表查询
         /// </summary>
         /// <param name="predicate"></param>
         /// <returns></returns>
-        public virtual List<TEntity> Find(Expression<Func<TEntity, bool>> predicate)
+        public virtual List<TEntity> Find(Expression<Func<TEntity, bool>> predicate, bool filterDeleted = true)
         {
-            return FindAsIQueryable(predicate).ToList();
+            return FindAsIQueryable(predicate, filterDeleted).ToList();
         }
         /// <summary>
         /// 
@@ -205,17 +252,17 @@ namespace VOL.Core.BaseProvider
         /// <param name=""></param>
         /// <param name="orderBy">排序字段</param>
         /// <returns></returns>
-        public virtual TEntity FindFirst(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy = null)
+        public virtual TEntity FindFirst(Expression<Func<TEntity, bool>> predicate, bool filterDeleted = true)
         {
-            return FindAsIQueryable(predicate, orderBy).FirstOrDefault();
+            return EFContext.Set<TEntity>(filterDeleted).Where(predicate).FirstOrDefault();
         }
 
 
-        public IQueryable<TEntity> FindAsIQueryable(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy = null)
+        public IQueryable<TEntity> FindAsIQueryable(Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy = null, bool filterDeleted = true)
         {
             if (orderBy != null)
-                return DbContext.Set<TEntity>().Where(predicate).GetIQueryableOrderBy(orderBy.GetExpressionToDic());
-            return DbContext.Set<TEntity>().Where(predicate);
+                return DbContext.Set<TEntity>(filterDeleted).Where(predicate).GetIQueryableOrderBy(orderBy.GetExpressionToDic());
+            return DbContext.Set<TEntity>(filterDeleted).Where(predicate);
         }
 
         public IIncludableQueryable<TEntity, TProperty> Include<TProperty>(Expression<Func<TEntity, TProperty>> incluedProperty)
@@ -271,20 +318,6 @@ namespace VOL.Core.BaseProvider
                 .Take(pagesize);
         }
 
-        public virtual List<TResult> QueryByPage<TResult>(int pageIndex, int pagesize, out int rowcount, Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy, Expression<Func<TEntity, TResult>> selectorResult, bool returnRowCount = true)
-        {
-            return IQueryablePage<TEntity>(pageIndex, pagesize, out rowcount, predicate, orderBy, returnRowCount).Select(selectorResult).ToList();
-        }
-
-        public List<TEntity> QueryByPage(int pageIndex, int pagesize, out int rowcount, Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy, bool returnRowCount = true)
-        {
-            return IQueryablePage<TEntity>(pageIndex, pagesize, out rowcount, predicate, orderBy).ToList();
-        }
-
-        public virtual List<TResult> QueryByPage<TResult>(int pageIndex, int pagesize, Expression<Func<TEntity, bool>> predicate, Expression<Func<TEntity, Dictionary<object, QueryOrderBy>>> orderBy, Expression<Func<TEntity, TResult>> selectorResult = null)
-        {
-            return IQueryablePage<TEntity>(pageIndex, pagesize, out int rowcount, predicate, orderBy).Select(selectorResult).ToList();
-        }
 
 
         /// <summary>
@@ -334,7 +367,7 @@ namespace VOL.Core.BaseProvider
             if (properties != null && properties.Length > 0)
             {
                 PropertyInfo[] entityProperty = typeof(TSource).GetProperties()
-                     .Where(x => x.GetCustomAttribute<NotMappedAttribute>() == null && !(x.PropertyType.IsGenericType && x.PropertyType.GetGenericTypeDefinition() == typeof(List<>))).ToArray();
+                        .Where(x => x.GetCustomAttribute<NotMappedAttribute>() == null && !(x.PropertyType.IsGenericType && x.PropertyType.GetGenericTypeDefinition() == typeof(List<>))).ToArray();
                 string keyName = entityProperty.GetKeyName();
                 if (properties.Contains(keyName))
                 {
@@ -391,9 +424,6 @@ namespace VOL.Core.BaseProvider
             }
         }
 
-
-
-
         /// <summary>
         ///
         /// </summary>
@@ -416,9 +446,8 @@ namespace VOL.Core.BaseProvider
             string message = "";
             if (updateDetail)
             {
-                string detailTypeName = typeof(List<Detail>).FullName;
                 PropertyInfo[] properties = typeof(TEntity).GetProperties();
-                PropertyInfo detail = properties.Where(x => x.PropertyType.FullName == detailTypeName).ToList().FirstOrDefault();
+                PropertyInfo detail = properties.Where(x => x.PropertyType.Name == "List`1").ToList().FirstOrDefault();
                 if (detail != null)
                 {
                     PropertyInfo key = properties.GetKeyProperty();
@@ -514,67 +543,30 @@ namespace VOL.Core.BaseProvider
         /// <param name="keys">主键key</param>
         /// <param name="delList">是否连明细一起删除</param>
         /// <returns></returns>
-        public virtual int DeleteWithKeys(object[] keys, bool delList = false)
+        public virtual int DeleteWithKeys(object[] keys, bool saveChange = false)
         {
-            if (!keys.Any())
+            var keyPro = typeof(TEntity).GetKeyProperty();
+            foreach (var key in keys.Distinct())
             {
-                return 0;
+                TEntity entity = Activator.CreateInstance<TEntity>();
+                keyPro.SetValue(entity, key.ChangeType(keyPro.PropertyType));
+                DbContext.Entry(entity).State = EntityState.Deleted;
             }
-            Type entityType = typeof(TEntity);
-            var keyProperty = entityType.GetKeyProperty();
-            string tKey = keyProperty.Name;
-            List<T> list = new List<T>();
-            if (keyProperty.PropertyType == typeof(string))
+            if (saveChange)
             {
-                foreach (var key in keys.Distinct())
-                {
-                    var entity = Activator.CreateInstance<T>();
-                    keyProperty.SetValue(entity, key);
-                    list.Add(entity);
-                }
-                DbContext.RemoveRange(list);
                 DbContext.SaveChanges();
-                return keys.Length;
             }
-
-
-            FieldType fieldType = entityType.GetFieldType();
-            string joinKeys = (fieldType == FieldType.Int || fieldType == FieldType.BigInt)
-                 ? string.Join(",", keys)
-                 : $"'{string.Join("','", keys)}'";
-
-            string sql = $"DELETE FROM {entityType.GetEntityTableName()} where {tKey} in ({joinKeys});";
-            if (delList)
-            {
-                Type detailType = entityType.GetCustomAttribute<EntityAttribute>().DetailTable?[0];
-                if (detailType != null)
-                    sql = sql + $"DELETE FROM {detailType.GetEntityTableName()} where {tKey} in ({joinKeys});";
-            }
-            return ExecuteSqlCommand(sql);
+            return keys.Length;
         }
-        public virtual int Delete([NotNull] Expression<Func<TEntity, bool>> wheres, bool saveChange = false)
+
+
+        public virtual int Delete([NotNull] Expression<Func<TEntity, bool>> wheres, bool saveChange = true)
         {
             return Delete<TEntity>(wheres, saveChange);
         }
-        public virtual int Delete<T>([NotNull] Expression<Func<T, bool>> wheres, bool saveChange = false) where T : class
+        public virtual int Delete<T>([NotNull] Expression<Func<T, bool>> wheres, bool saveChange = true) where T : class
         {
-            var keyProperty = typeof(T).GetKeyProperty();
-            string keyName = typeof(T).GetKeyProperty().Name;
-            var expression = keyName.GetExpression<T, object>();
-            var ids = DbContext.Set<T>().Where(wheres).Select(expression).ToList();
-            List<T> list = new List<T>();
-            foreach (var id in ids)
-            {
-                T entity = Activator.CreateInstance<T>();
-                keyProperty.SetValue(entity, id);
-                list.Add(entity);
-            }
-            DbContext.RemoveRange(list);
-            if (saveChange)
-            {
-                return DbContext.SaveChanges();
-            }
-            return 0;
+            return DbContext.Set<T>().Where(wheres).ExecuteDelete();
         }
 
         public virtual Task AddAsync(TEntity entities)
@@ -589,40 +581,44 @@ namespace VOL.Core.BaseProvider
 
         public virtual void Add(TEntity entities, bool saveChanges = false)
         {
-            AddRange(new List<TEntity>() { entities }, saveChanges);
+            AddRange([entities], saveChanges);
+        }
+        public virtual void Add<T>(T entity, bool saveChanges = false) where T : class
+        {
+            AddRange([entity], saveChanges);
         }
         public virtual void AddRange(IEnumerable<TEntity> entities, bool saveChanges = false)
         {
-            DBSet.AddRange(entities);
-            if (saveChanges) DbContext.SaveChanges();
+            AddRange<TEntity>(entities, saveChanges);
         }
 
         public virtual void AddRange<T>(IEnumerable<T> entities, bool saveChanges = false)
             where T : class
         {
+            if (entities.Count() == 0)
+            {
+                return;
+            }
+            if (AppSetting.EnableSnowFlakeID)
+            {
+                PropertyInfo keyPro = typeof(T).GetKeyProperty();
+                if (keyPro.PropertyType == typeof(long))
+                {
+                    //生成雪花id
+                    var idWorker = new IdWorker();
+                    foreach (var item in entities)
+                    {
+                        if (keyPro.GetValue(item).ToString().Length < 10)
+                        {
+                            keyPro.SetValue(item, idWorker.NextId());
+                        }
+                    }
+                }
+            }
             DbContext.Set<T>().AddRange(entities);
             if (saveChanges) DbContext.SaveChanges();
         }
 
-        /// <summary>
-        /// 注意List生成的table的列顺序必须要和数据库表的列顺序一致
-        /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="entities"></param>
-        public virtual void BulkInsert(IEnumerable<TEntity> entities, bool setOutputIdentity = false)
-        {
-            //  EFContext.Model.FindEntityType("").Relational()
-            //Pomelo.EntityFrameworkCore.MySql
-            try
-            {
-                //     EFContext.BulkInsert(entities.ToList());
-            }
-            catch (DbUpdateException ex)
-            {
-                throw (ex.InnerException as Exception ?? ex);
-            }
-            //  BulkInsert(entities.ToDataTable(), typeof(T).GetEntityTableName(), null);
-        }
 
         public virtual int SaveChanges()
         {
@@ -654,7 +650,6 @@ namespace VOL.Core.BaseProvider
         /// <returns></returns>
         public virtual IQueryable<TEntity> FromSqlInterpolated([NotNull] FormattableString sql)
         {
-            //DBSet.FromSqlInterpolated(sql).Select(x => new { x,xxx}).ToList();
             return DBSet.FromSqlInterpolated(sql);
         }
 
@@ -672,36 +667,6 @@ namespace VOL.Core.BaseProvider
             {
                 DbContext.Entry(entity).State = EntityState.Detached;
             }
-        }
-
-        /// <summary>
-        /// 查询字段不为null或者为空
-        /// </summary>
-        /// <param name="field">x=>new {x.字段}</param>
-        /// <param name="value">查询的类</param>
-        /// <param name="linqExpression">查询类型</param>
-        /// <returns></returns>
-        public virtual IQueryable<TEntity> WhereIF([NotNull] Expression<Func<TEntity, object>> field, string value, LinqExpressionType linqExpression = LinqExpressionType.Equal)
-        {
-            return EFContext.Set<TEntity>().WhereNotEmpty(field, value, linqExpression);
-        }
-
-        public virtual IQueryable<TEntity> WhereIF(bool checkCondition, Expression<Func<TEntity, bool>> predicate)
-        {
-            if (checkCondition)
-            {
-                return EFContext.Set<TEntity>().Where(predicate);
-            }
-            return EFContext.Set<TEntity>();
-        }
-
-        public virtual IQueryable<T> WhereIF<T>(bool checkCondition, Expression<Func<T, bool>> predicate) where T : class
-        {
-            if (checkCondition)
-            {
-                return EFContext.Set<T>().Where(predicate);
-            }
-            return EFContext.Set<T>();
         }
     }
 }

@@ -160,11 +160,14 @@ namespace VOL.Core.Services
         {
             DataTable queueTable = CreateEmptyTable();
             List<Sys_Log> list = new List<Sys_Log>();
-            bool pgsql = DBType.Name.ToLower() == DbCurrentType.PgSql.ToString().ToLower();
+            string dbType = DBType.Name.ToLower();
+            bool insertable = dbType == DbCurrentType.PgSql.ToString().ToLower()
+                || dbType == DbCurrentType.Oracle.ToString().ToLower()
+                || dbType == DbCurrentType.DM.ToString().ToLower();
             while (true)
             {
                 try
-                {
+                { 
                     if (loggerQueueData.Count() > 0 && list.Count < 500)
                     {
                         loggerQueueData.TryDequeue(out Sys_Log log);
@@ -174,7 +177,7 @@ namespace VOL.Core.Services
                     //每1秒写一次数据
                     Thread.Sleep(1000);
                     if (list.Count == 0) { continue; }
-                    if (pgsql)
+                    if (insertable)
                     {
                         DbManger.SqlSugarClient.Insertable<Sys_Log>(list).ExecuteCommand();
                     }

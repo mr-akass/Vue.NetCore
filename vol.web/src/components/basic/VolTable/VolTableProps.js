@@ -1,6 +1,18 @@
-//2024.11.16重写组件
+
 export default function () {
   return {
+    eventNext:{ //输入框、下拉框选择或回车事件后，自动跳转到下一个单元格
+      type: Boolean,
+      default: false
+    },
+    tableV2: { //启用高性表格(解决大批量数据显示或者编辑)
+      type: Boolean,
+      default: false
+    },
+    rowHeight: { //启用高性表格行高度
+      type: Number,
+      default: 37
+    },
     rowKey: {
       // 树形结构的主键字段，如果设置值默认会开启树形table；注意rowKey字段的值必须是唯一（2021.05.02）
       typeof: String,
@@ -120,7 +132,7 @@ export default function () {
     columnIndex: {
       // 是否显示行号(2020..11.1)
       type: Boolean,
-      default: true
+      default: false
     },
     highlightCurrentRow: {
       //增加选中行高亮显示(2022.10.07)
@@ -167,7 +179,7 @@ export default function () {
     },
     spanMethod: {
       type: Function,
-      default: ({ row, column, rowIndex, columnIndex }, rows) => {}
+      default: ({ row, column, rowIndex, columnIndex }, rows) => { }
     },
     reserveSelection: {
       //分页或者刷新表格数据后是否保留复选框选择状态，2024.09.10

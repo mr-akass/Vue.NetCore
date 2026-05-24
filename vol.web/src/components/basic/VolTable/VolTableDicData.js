@@ -1,26 +1,26 @@
-const hasBindData = (column) => {
+const hasBindData = (column, resetData) => {
   if (column.bind && column.bind.key) {
     if (!column.bind.data) {
       column.bind.data = []
     }
-    if (!column.bind.data.length) {
+    if (!column.bind.data.length || resetData) {
       return true
     }
   }
   return false
 }
 
-const getHasDicData = (columns) => {
+const getHasDicData = (columns, resetData) => {
   const dicColumns = []
   for (let index = 0; index < columns.length; index++) {
     const column = columns[index]
     if (column.children && Array.isArray(column.children)) {
       column.children.forEach((cl) => {
-        if (hasBindData(cl)) dicColumns.push(cl)
+        if (hasBindData(cl, resetData)) dicColumns.push(cl)
       })
       continue
     }
-    if (hasBindData(column)) {
+    if (hasBindData(column, resetData)) {
       dicColumns.push(column)
     }
   }
@@ -29,9 +29,9 @@ const getHasDicData = (columns) => {
 const arrType = ['cascader', 'treeSelect']
 //初始化字典数据源
 export const initDataSource = async (proxy, props, resetData, dicInitedCallback) => {
-  if (!props.loadKey) return
+  if (!props.loadKey && !resetData) return
 
-  const columns = getHasDicData(props.columns)
+  const columns = getHasDicData(props.columns, resetData)
   if (!columns.length) {
     return
   }
@@ -43,10 +43,10 @@ export const initDataSource = async (proxy, props, resetData, dicInitedCallback)
     return res
   })
   dicInitedCallback && dicInitedCallback(dic)
-  bindData(columns, dic, proxy, resetData, false)
+  bindData(columns, dic, proxy, props, resetData, false)
 }
 
-export const bindData = (columns, dic, proxy, resetData, checkBind = true) => {
+export const bindData = (columns, dic, proxy, props, resetData, checkBind = true) => {
   for (let index = 0; index < columns.length; index++) {
     const column = columns[index]
     if (checkBind && !hasBindData(column)) {
@@ -61,6 +61,12 @@ export const bindData = (columns, dic, proxy, resetData, checkBind = true) => {
     if (!dicItem) continue
     //级联
     if (arrType.indexOf(column.type) != -1 || arrType.indexOf(column.edit?.type) != -1) {
+      //强制级联默认为单选
+      if ((column.type=='cascader'||column.edit?.type=='cascader')&&!column.hasOwnProperty('multiple')) {
+        column.multiple=false;
+        //只能选择最后一级
+        //column.checkCtrictly=false;
+      }
       column.bind.orginData = JSON.parse(JSON.stringify(dicItem.data))
       column.bind.data = proxy.base.convertTree(dicItem.data, (node, data, isRoot) => {
         if (!node.inited) {
@@ -71,6 +77,18 @@ export const bindData = (columns, dic, proxy, resetData, checkBind = true) => {
       })
       continue
     }
+    // try {
+    //   if (dicItem.data.length > props.select2Count && !dicItem.data[0].hasOwnProperty('label')) {
+    //     column.bind.data = dicItem.data.map(x => {
+    //       x.label = x.value
+    //       x.value = x.key
+    //       return x;
+    //     })
+    //     continue;
+    //   }
+    // } catch (error) {
+    //   console.log(error)
+    // }
     //绑定数据源
     column.bind.data = dicItem.data
   }

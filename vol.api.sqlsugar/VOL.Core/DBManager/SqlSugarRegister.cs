@@ -3,17 +3,10 @@ using Microsoft.Extensions.DependencyInjection;
 using SqlSugar;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Linq.Expressions;
+using System.ComponentModel.DataAnnotations;
 using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
 using VOL.Core.Configuration;
-using VOL.Core.Const;
-using VOL.Core.DBManager;
 using VOL.Core.DbSqlSugar;
-using VOL.Core.Enums;
-using VOL.Core.Extensions;
 
 namespace VOL.Core.DBManager
 {
@@ -26,17 +19,19 @@ namespace VOL.Core.DBManager
         /// <returns></returns>
         public static ConnectionConfig GetSysConnectionConfig()
         {
+            var dbType = DbManger.GetDbType();
             return new ConnectionConfig()
             {
-                DbType = DbManger.GetDbType(),// SqlSugar.DbType.SqlServer,
+                DbType = dbType,// SqlSugar.DbType.SqlServer,
                 ConnectionString = DBServerProvider.GetConnectionString(null),
                 IsAutoCloseConnection = true,
                 ConfigId = "default",
                 MoreSettings = new ConnMoreSettings()
                 {
-                    PgSqlIsAutoToLower = false
+                    PgSqlIsAutoToLower = false,
+                    IsAutoToUpper = IsAutoToUpper(dbType)
                 },
-                ConfigureExternalServices = GetConfigureExternalServices(),
+                ConfigureExternalServices = GetConfigureExternalServices(dbType),
             };
         }
 
@@ -80,17 +75,36 @@ namespace VOL.Core.DBManager
             });
             return services;
         }
-        private static ConfigureExternalServices GetConfigureExternalServices()
+        private static bool IsAutoToUpper(DbType dbType)
+        {
+            return dbType == DbType.Dm || dbType == DbType.Oracle;
+        }
+        /// <summary>
+        /// 设置字段全大写
+        /// </summary>
+        /// <returns></returns>
+        private static ConfigureExternalServices GetConfigureExternalServices(DbType dbType)
         {
             //https://www.donet5.com/Home/Doc?typeId=1182
             return new ConfigureExternalServices()
             {
+                EntityNameService = (type, entityInfo) => { },
                 EntityService = (property, column) =>
                 {
-                    if (DBType.Name == "DM")
+                    if (IsAutoToUpper(dbType))
                     {
-                        // var attributes = property.GetCustomAttributes(true);//get all attributes 
                         column.DbColumnName = property.Name.ToUpper();
+                        //这里限制的Oralce数据库，DM数据库也会执行？
+                        if (dbType == DbType.Oracle && column.PropertyInfo.PropertyType == typeof(int)
+                           && property.DeclaringType.Name.StartsWith("Sys_"))
+                        {
+                            //oralce系统表设置自增
+                            if (column.PropertyInfo.GetCustomAttribute<KeyAttribute>() != null)
+                            {
+                                column.IsIdentity = false;
+                                column.OracleSequenceName = $"T_{property.DeclaringType.Name.ToUpper()}_SEQ";
+                            }
+                        }
                     }
                 }
             };

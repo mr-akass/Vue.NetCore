@@ -62,6 +62,10 @@ namespace VOL.Core.Configuration
 
         public static string CurrentPath { get; private set; } = null;
         public static string DownLoadPath { get { return CurrentPath + "\\Download\\"; } }
+        /// <summary>
+        /// 国密 SM2/SM3/SM4（appsettings.json → GmCrypto）
+        /// </summary>
+        public static GmCryptoOptions GmCrypto { get; private set; }
         public static void Init(IServiceCollection services, IConfiguration configuration)
         {
             Configuration = configuration;
@@ -86,10 +90,11 @@ namespace VOL.Core.Configuration
 
             GlobalFilter.Actions = GlobalFilter.Actions ?? new string[0];
             Kafka = provider.GetRequiredService<IOptions<Kafka>>().Value ?? new Kafka();
+            GmCrypto = provider.GetRequiredService<IOptions<GmCryptoOptions>>().Value ?? new GmCryptoOptions();
 
             _connection = provider.GetRequiredService<IOptions<Connection>>().Value;
 
-    
+
 
             ExpMinutes = (configuration["ExpMinutes"] ?? "120").GetInt();
 
@@ -142,10 +147,10 @@ namespace VOL.Core.Configuration
         public bool UseSignalR { get; set; }
     }
 
-    public class CreateMember: TableDefaultColumns
+    public class CreateMember : TableDefaultColumns
     {
     }
-    public class ModifyMember: TableDefaultColumns
+    public class ModifyMember : TableDefaultColumns
     {
     }
 

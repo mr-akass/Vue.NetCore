@@ -2,13 +2,13 @@
 using OfficeOpenXml.Style;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using VOL.Core.DBManager;
 using VOL.Core.Extensions;
 using VOL.Core.Infrastructure;
@@ -25,27 +25,27 @@ namespace VOL.Core.Utilities
         /// <param name="path"></param>
         /// <param name="exportColumns">指定导出的列</param>
         /// <param name="ignoreColumns">忽略不导出的列(如果设置了exportColumns,ignoreColumns不会生效)</param>
-        /// <param name="ignoreSelectValidationColumns">忽略下拉框数据源验证的字段</param>
         /// <returns></returns>
 
         public static WebResponseContent ReadToDataTable<T>(string path,
             Expression<Func<T, object>> exportColumns = null,
             List<string> ignoreTemplate = null,
             Func<string, ExcelWorksheet, ExcelRange, int, int, string> readValue = null,
-            Expression<Func<T, object>> ignoreSelectValidationColumns = null
-            )
+            Expression<Func<T, Dictionary<object, string>>> headerMap = null,
+            int importStartRowIndex = 1,
+            Expression<Func<T, object>> ignoreSelectValidationColumns = null)
         {
             WebResponseContent responseContent = new WebResponseContent();
 
             FileInfo file = new FileInfo(path);
-            if (!file.Exists) return responseContent.Error("未找到上传的文件,请重新上传");
+            if (!file.Exists) return responseContent.Error("未找到上传的文件");
 
             List<T> entities = new List<T>();
             using (ExcelPackage package = new ExcelPackage(file))
             {
                 if (package.Workbook.Worksheets.Count == 0 ||
                     package.Workbook.Worksheets.FirstOrDefault().Dimension.End.Row <= 1)
-                    return responseContent.Error("未导入数据");
+                    return responseContent.Error("无数据");
                 //2020.08.11修复获取表结构信息时，表为别名时查不到数据的问题
                 //typeof(T).GetEntityTableName()
                 List<CellOptions> cellOptions = GetExportColumnInfo(typeof(T).Name, false, false, columns: exportColumns?.GetExpressionToArray());
@@ -63,50 +63,62 @@ namespace VOL.Core.Utilities
                         .ToList();
                 }
 
-
+                Dictionary<string, string> headerMapDic = GetHeaderMap(headerMap);
                 ExcelWorksheet sheetFirst = package.Workbook.Worksheets.FirstOrDefault();
 
                 for (int j = sheetFirst.Dimension.Start.Column, k = sheetFirst.Dimension.End.Column; j <= k; j++)
                 {
-                    string columnCNName = sheetFirst.Cells[1, j].Value?.ToString()?.Trim();
+                    string columnCNName = sheetFirst.Cells[importStartRowIndex, j].Value?.ToString()?.Trim();
                     if (!string.IsNullOrEmpty(columnCNName))
                     {
-                        CellOptions options = cellOptions.Where(x => x.ColumnCNName == columnCNName).FirstOrDefault();
+                        CellOptions options = null;
+
+                        if (headerMapDic != null && headerMapDic.ContainsValue(columnCNName))
+                        {
+                            string field = headerMapDic.Where(x => x.Value == columnCNName).Select(s => s.Key).FirstOrDefault();
+                            options = cellOptions.Where(x => x.ColumnName == field).FirstOrDefault();
+                        }
+                        else
+                        {
+                            options = cellOptions.Where(x => x.ColumnCNName == columnCNName).FirstOrDefault();
+                        }
+
                         if (options == null)
                         {
-                            return responseContent.Error("导入文件列[" + columnCNName + "]不是模板中的列");
+                            return responseContent.Error($"[{columnCNName}]不是模板中的列");
                         }
                         if (options.Index > 0)
                         {
-                            return responseContent.Error("导入文件列[" + columnCNName + "]不能重复");
+                            return responseContent.Error($"[{columnCNName}]列名重复");
                         }
                         options.Index = j;
                     }
                 }
                 if (cellOptions.Exists(x => x.Index == 0))
                 {
-                    return responseContent.Error("导入文件列必须与导入模板相同");
+                    var errorOps = cellOptions.Where(x => x.Index == 0).Select(s => s.ColumnCNName + "," + s.ColumnName);
+                    return responseContent.Error($"{"导入文件列未找到字段"}:{string.Join("; ", errorOps)}");
                 }
-                string[] ignoreSelectValidationFields =null;
-                if (ignoreSelectValidationColumns!=null)
+                string[] ignoreSelectValidationFields = new string[] { };
+                if (ignoreSelectValidationColumns != null)
                 {
                     ignoreSelectValidationFields = ignoreSelectValidationColumns.GetExpressionToArray();
-                }
-                else
-                {
-                    ignoreSelectValidationFields = new string[0];
                 }
 
                 PropertyInfo[] propertyInfos = typeof(T).GetProperties()
                        .Where(x => cellOptions.Select(s => s.ColumnName).Contains(x.Name))
                        .ToArray();
                 ExcelWorksheet sheet = package.Workbook.Worksheets.FirstOrDefault();
-                for (int m = sheet.Dimension.Start.Row + 1, n = sheet.Dimension.End.Row; m <= n; m++)
+                for (int m = importStartRowIndex + 1, n = sheet.Dimension.End.Row; m <= n; m++)
                 {
                     T entity = Activator.CreateInstance<T>();
                     for (int j = sheet.Dimension.Start.Column, k = sheet.Dimension.End.Column; j <= k; j++)
                     {
-
+                        //0.1234324小数处理
+                        //if (sheet.Cells[m, j].Value is double dbvalue)
+                        //{
+                        //    dbvalue.ToString("0.#####");
+                        //}
                         string value = sheet.Cells[m, j].Value?.ToString();
                         //2022.06.20增加原生excel读取方法
                         if (readValue != null)
@@ -115,13 +127,17 @@ namespace VOL.Core.Utilities
                         }
 
                         CellOptions options = cellOptions.Where(x => x.Index == j).FirstOrDefault();
+                        if (options == null)
+                        {
+                            continue;
+                        }
                         PropertyInfo property = propertyInfos.Where(x => x.Name == options.ColumnName).FirstOrDefault();
                         //2021.06.04优化判断
                         if (string.IsNullOrEmpty(value))
                         {
                             if (options.Requierd)
                             {
-                                return responseContent.Error($"第{m}行[{options.ColumnCNName}]验证未通过,不能为空。");
+                                return responseContent.Error($"第[{m}]行,[{options.ColumnCNName}]验证未通过,不能为空");
                             }
                             continue;
                         }
@@ -129,15 +145,15 @@ namespace VOL.Core.Utilities
 
                         //验证字典数据
                         //2020.09.20增加判断数据源是否有值
-                        if (!string.IsNullOrEmpty(options.DropNo) && !string.IsNullOrEmpty(value)&&!ignoreSelectValidationFields.Contains(property.Name))
+                        if (!string.IsNullOrEmpty(options.DropNo) && !string.IsNullOrEmpty(value) && !ignoreSelectValidationFields.Contains(property.Name))
                         {
                             if (options.KeyValues == null)
                             {
-                                return responseContent.Error($"[{options.ColumnCNName}]字段数字典编号[{options.DropNo}]缺失,请检查字典配置");
+                                return responseContent.Error($"[{options.ColumnCNName}]数据字典缺失");
                             }
                             string key = null;
                             //2022.11.21增加导入多选的支持
-                            if ((options.EditType == "selectList" || options.EditType == "checkbox") && !string.IsNullOrEmpty(value))
+                            if ((options.EditType == "selectList" || options.EditType == "checkbox" || options.EditType == "treeSelect") && !string.IsNullOrEmpty(value))
                             {
                                 var cellValues = value.Replace("，", ",").Split(",").Where(x => !string.IsNullOrEmpty(x)).ToArray();
                                 var keys = options.KeyValues.Where(x => cellValues.Contains(x.Value))
@@ -157,8 +173,9 @@ namespace VOL.Core.Utilities
                             if (key == null)//&& options.Requierd
                             {
                                 //小于20个字典项，直接提示所有可选value
-                                string values = options.KeyValues.Count < 20 ? (string.Join(',', options.KeyValues.Select(s => s.Value))) : options.ColumnCNName;
-                                return responseContent.Error($"第{m}行[{options.ColumnCNName}]验证未通过,必须是字典数据中[{values}]的值。");
+                                string values = (string.Join(',', options.KeyValues.Take(300).Select(s => s.Value)));
+                                string msg = $"第[{m}]行,[{options.ColumnCNName}]验证未通过,只能填写[{values}]";
+                                return responseContent.Error(msg);
                             }
                             //将值设置为数据字典的Key,如果导入为是/否字典项，存在表中应该对为1/0
                             value = key;
@@ -267,13 +284,20 @@ namespace VOL.Core.Utilities
         /// <param name="savePath">导出文件的绝对路径</param>
         /// <param name="fileName">导出的文件名+后缀,如:123.xlsx</param>
         /// <returns></returns>
-        public static string ExportTemplate<T>(List<string> exportColumns, List<string> ignoreColumns, string savePath, string fileName)
+        public static string ExportTemplate<T>(List<string> exportColumns, List<string> ignoreColumns, string savePath = null, string fileName = null,
+            Expression<Func<T, Dictionary<object, string>>> headerMap = null)
         {
-            return Export<T>(null, exportColumns, ignoreColumns, savePath, fileName, true);
+            return Export<T>(null, exportColumns, ignoreColumns, savePath, fileName, true, headerMap);
+        }
+
+        public static byte[] ExportTemplateBytes<T>(Expression<Func<T, object>> exportColumns, List<string> ignoreColumns,
+         Expression<Func<T, Dictionary<object, string>>> headerMap = null)
+        {
+            return ExportData<T>(null, exportColumns?.GetExpressionToArray(), ignoreColumns, null, null, true, headerMap).bytes;
         }
 
         /// <summary>
-        /// 下载导出模板(仅限框架导出模板使用)(202.05.07)
+        /// 下载导出模板(仅限框架导出模板使用)
         /// </summary>
         /// <typeparam name="T"></typeparam>
         /// <param name="exportColumns">指定导出的列</param>
@@ -281,9 +305,10 @@ namespace VOL.Core.Utilities
         /// <param name="savePath">导出文件的绝对路径</param>
         /// <param name="fileName">导出的文件名+后缀,如:123.xlsx</param>
         /// <returns></returns>
-        public static string ExportTemplate<T>(Expression<Func<T, object>> exportColumns, List<string> ignoreColumns, string savePath, string fileName)
+        public static string ExportTemplate<T>(Expression<Func<T, object>> exportColumns, List<string> ignoreColumns, string savePath, string fileName,
+            Expression<Func<T, Dictionary<object, string>>> headerMap = null)
         {
-            return Export<T>(null, exportColumns?.GetExpressionToArray(), ignoreColumns, savePath, fileName, true);
+            return Export<T>(null, exportColumns?.GetExpressionToArray(), ignoreColumns, savePath, fileName, true, headerMap);
         }
 
         /// <summary>
@@ -328,30 +353,41 @@ namespace VOL.Core.Utilities
         /// <param name="fileName">保存的文件名</param>
         ///  <param name="template">是否为下载模板</param>
         /// <returns></returns>
-        public static string Export<T>(List<T> list, IEnumerable<string> exportColumns, IEnumerable<string> ignoreColumns, string savePath, string fileName, bool template = false)
+        public static string Export<T>(List<T> list, IEnumerable<string> exportColumns,
+            IEnumerable<string> ignoreColumns,
+            string savePath,
+            string fileName,
+            bool template = false,
+            Expression<Func<T, Dictionary<object, string>>> headerMap = null)
         {
-            if (!Directory.Exists(savePath)) Directory.CreateDirectory(savePath);
+            return ExportData(list, exportColumns, ignoreColumns, savePath, fileName, template, headerMap).path;
+        }
+        public static byte[] ExportBytes<T>(List<T> list,
+            IEnumerable<string> exportColumns,
+            IEnumerable<string> ignoreColumns,
+            Expression<Func<T, Dictionary<object, string>>> headerMap = null)
+        {
+            return ExportData(list, exportColumns, ignoreColumns, null, null, false, headerMap).bytes;
+        }
 
-            //获取代码生成器对应的配置信息
-            //  List<CellOptions> cellOptions = GetExportColumnInfo(typeof(T).GetEntityTableName(), template);
-            //2020.06.02修复使用表别名时读取不到配置信息
+        private static (string path, byte[] bytes) ExportData<T>(List<T> list, IEnumerable<string> exportColumns,
+          IEnumerable<string> ignoreColumns,
+          string savePath,
+          string fileName,
+          bool template = false,
+          Expression<Func<T, Dictionary<object, string>>> headerMap = null)
+        {
+            if (savePath != null && !Directory.Exists(savePath)) Directory.CreateDirectory(savePath);
             List<CellOptions> cellOptions = GetExportColumnInfo(typeof(T).Name, template, columns: exportColumns?.ToArray());
             string fullPath = savePath + fileName;
             //获取所有有值的数据源
             var dicNoKeys = cellOptions
                  .Where(x => !string.IsNullOrEmpty(x.DropNo) && x.KeyValues != null && x.KeyValues.Keys.Count > 0)
                  .Select(x => new { x.DropNo, x.ColumnName, x.SearchType, x.EditType }).Distinct().ToList();
-            //2021.01.24修复多选类型，导出excel文件没有转换数据源的问题
-            var selectList = dicNoKeys.Where(x => x.SearchType == "checkbox" || x.SearchType == "selectList" || x.EditType == "checkbox" || x.EditType == "selectList")
+            var selectList = dicNoKeys.Where(x => x.SearchType == "checkbox" || x.SearchType == "selectList" || x.SearchType == "treeSelect" || x.EditType == "checkbox" || x.EditType == "selectList" || x.EditType == "treeSelect")
                   .Select(s => s.ColumnName).ToArray();
 
             List<PropertyInfo> propertyInfo = null;
-
-            /*导出时，代码生成器中的表配置信息Sys_TableInfo/Sys_TableColumn必须与当前数据库相同，否则导出来可能没有数据*/
-
-            //2020.06.02优化读取导出列配置信息
-            //导出指定的列
-            //如果指定了导出的标题列，忽略的标题列不再起作用
             if (exportColumns != null && exportColumns.Count() > 0)
             {
                 propertyInfo = new List<PropertyInfo>();
@@ -364,11 +400,6 @@ namespace VOL.Core.Utilities
                         propertyInfo.Add(property);
                     }
                 }
-                //propertyInfo =
-                //   typeof(T).GetProperties()
-                //  .Where(x => exportColumns.Select(g => g.ToLower()).Contains(x.Name.ToLower())).ToList();
-                //.Where(x => cellOptions.Select(s => s.ColumnName) //获取代码生成器配置的列
-                //.Contains(x.Name)).ToList();
             }
             else if (ignoreColumns != null && ignoreColumns.Count() > 0)
             {
@@ -379,16 +410,10 @@ namespace VOL.Core.Utilities
             }
             else
             {
-                propertyInfo = new List<PropertyInfo>();
-                var properties = typeof(T).GetProperties();
-                foreach (var item in cellOptions)
-                {
-                    var property = properties.Where(x => x.Name == item.ColumnName).FirstOrDefault();
-                    if (property != null)
-                    {
-                        propertyInfo.Add(property);
-                    }
-                }
+                //默认导出代码生成器中配置【是否显示】=是的列
+                propertyInfo = typeof(T).GetProperties()
+                  .Where(x => cellOptions.Select(s => s.ColumnName).Contains(x.Name)) //获取代码生成器配置的列
+                  .ToList();
             }
             string[] dateArr = null;
             if (!template)
@@ -397,109 +422,161 @@ namespace VOL.Core.Utilities
                 || x.PropertyType == typeof(DateTime?))
                 .Select(s => s.Name).ToArray();
             }
+            Dictionary<string, string> headerMapDic = GetHeaderMap(headerMap);
+            //const long imageLimitBytes = 10 * 1024 * 1024; // 10MB
+            //long embeddedImageBytes = 0;
 
-            using (ExcelPackage package = new ExcelPackage())
+
+            using ExcelPackage package = new ExcelPackage();
+
+            var worksheet = package.Workbook.Worksheets.Add("sheet1");
+            for (int i = 0; i < propertyInfo.Count; i++)
             {
-                var worksheet = package.Workbook.Worksheets.Add("sheet1");
-                for (int i = 0; i < propertyInfo.Count; i++)
+                string columnName = propertyInfo[i].Name;
+                using (ExcelRange range = worksheet.Cells[1, i + 1])
                 {
-                    string columnName = propertyInfo[i].Name;
-                    using (ExcelRange range = worksheet.Cells[1, i + 1])
+                    worksheet.Cells[1, i + 1].Style.Fill.PatternType = ExcelFillStyle.Solid;
+                    //默认灰色背景，白色字体
+                    Color backgroundColor = Color.Gray;
+                    //字体颜色
+                    Color fontColor = Color.White;
+                    //下载模板并且是必填项，将表格设置为黄色
+                    if (template)
                     {
-                        worksheet.Cells[1, i + 1].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                        //默认灰色背景，白色字体
-                        Color backgroundColor = Color.Gray;
-                        //字体颜色
-                        Color fontColor = Color.White;
-                        //下载模板并且是必填项，将表格设置为黄色
-                        if (template)
+                        fontColor = Color.Black;
+                        if (cellOptions.Exists(x => x.ColumnName == columnName && x.Requierd))
                         {
-                            fontColor = Color.Black;
-                            if (cellOptions.Exists(x => x.ColumnName == columnName && x.Requierd))
-                            {
-                                backgroundColor = Color.Yellow;  //黄色必填
-                            }
-                            else
-                            {
-                                backgroundColor = Color.White;
-                            }
-                        }
-                        worksheet.Cells[1, i + 1].Style.Fill.BackgroundColor.SetColor(backgroundColor);  //背景色
-                        worksheet.Cells[1, i + 1].Style.Font.Color.SetColor(fontColor);//字体颜色
-                    }
-                    CellOptions options = cellOptions.Where(x => x.ColumnName == columnName).FirstOrDefault();
-                    if (options != null)
-                    {
-                        worksheet.Column(i + 1).Width = options.ColumnWidth / 6.00;
-                        worksheet.Cells[1, i + 1].Value = options.ColumnCNName;
-                    }
-                    else
-                    {
-                        columnName = propertyInfo[i].GetTypeCustomValue<DisplayAttribute>(x => x.Name) ?? columnName;
-                        worksheet.Column(i + 1).Width = 15;
-                        worksheet.Cells[1, i + 1].Value = columnName;
-                    }
-                }
-                //下载模板直接返回
-                if (template)
-                {
-                    package.SaveAs(new FileInfo(fullPath));
-                    return fullPath;
-                }
-                //2021.01.24修复多选类型，导出excel文件没有转换数据源的问题
-                IEnumerable<string> GetListValues(string cellValues, string propertyName)
-                {
-                    var values = cellValues.Split(",");
-                    for (int i = 0; i < values.Length; i++)
-                    {
-                        cellOptions.Where(x => x.ColumnName == propertyName)
-                      .Select(s => s.KeyValues)
-                      .FirstOrDefault()
-                     .TryGetValue(values[i], out string result);
-                        yield return result ?? values[i];
-                    }
-
-                }
-                for (int i = 0; i < list.Count; i++)
-                {
-                    for (int j = 0; j < propertyInfo.Count; j++)
-                    {
-                        object cellValue = null;
-                        if (dateArr != null && dateArr.Contains(propertyInfo[j].Name))
-                        {
-                            object value = propertyInfo[j].GetValue(list[i]);
-                            cellValue = value == null ? "" : ((DateTime)value).ToString("yyyy-MM-dd HH:mm:sss").Replace(" 00:00:00", "");
+                            backgroundColor = Color.Yellow;  //黄色必填
                         }
                         else
                         {
-                            cellValue = propertyInfo[j].GetValue(list[i]);
+                            backgroundColor = Color.White;
                         }
-                        if (cellValue != null && dicNoKeys.Exists(x => x.ColumnName == propertyInfo[j].Name))
+                    }
+                    worksheet.Cells[1, i + 1].Style.Fill.BackgroundColor.SetColor(backgroundColor);  //背景色
+                    worksheet.Cells[1, i + 1].Style.Font.Color.SetColor(fontColor);//字体颜色
+                }
+                CellOptions options = cellOptions.Where(x => x.ColumnName == columnName).FirstOrDefault();
+                if (options == null)
+                {
+                    columnName = propertyInfo[i].GetDisplayName();
+                }
+
+                worksheet.Column(i + 1).Width = options == null ? 15 : options.ColumnWidth / 6.00;
+
+                if (headerMapDic != null && headerMapDic.TryGetValue(columnName, out string name))
+                {
+                    columnName = name;
+                }
+                else if (options != null)
+                {
+                    columnName = options.ColumnCNName;
+                }
+                worksheet.Cells[1, i + 1].Value = columnName;
+            }
+            //下载模板直接返回
+            if (template)
+            {
+                if (string.IsNullOrEmpty(fullPath))
+                {
+                    using var ms = new MemoryStream();
+                    package.SaveAs(ms);
+                    return (null, ms.ToArray());
+                }
+                package.SaveAs(new FileInfo(fullPath));
+                return (fullPath, null);
+            }
+            IEnumerable<string> GetListValues(string cellValues, string propertyName)
+            {
+                var values = cellValues.Split(",");
+                for (int i = 0; i < values.Length; i++)
+                {
+                    cellOptions.Where(x => x.ColumnName == propertyName)
+                  .Select(s => s.KeyValues)
+                  .FirstOrDefault()
+                 .TryGetValue(values[i], out string result);
+                    yield return result ?? values[i];
+                }
+
+            }
+            for (int i = 0; i < list.Count; i++)
+            {
+                for (int j = 0; j < propertyInfo.Count; j++)
+                {
+                    object cellValue = null;
+                    // 6year年、4date年月日、5month年月
+                    int? viewType = cellOptions.Where(c => c.ColumnName == propertyInfo[j].Name).Select(s => s.ViewType).FirstOrDefault();
+                    if (viewType == 6 || viewType == 5 || viewType == 4)
+                    {
+                        cellValue = propertyInfo[j].GetValue(list[i]);
+                        if (cellValue != null)
                         {
-                            //2021.01.24修复多选类型，导出excel文件没有转换数据源的问题
-                            if (selectList.Contains(propertyInfo[j].Name))
+                            if (viewType == 6)
                             {
-                                cellValue = string.Join(",", GetListValues(cellValue.ToString(), propertyInfo[j].Name));
+                                cellValue = ((DateTime)cellValue).Year;
+                            }
+                            else if (viewType == 5)
+                            {
+                                cellValue = ((DateTime)cellValue).ToString("yyyy-MM");
                             }
                             else
                             {
-                                cellOptions.Where(x => x.ColumnName == propertyInfo[j].Name)
-                            .Select(s => s.KeyValues)
-                            .FirstOrDefault()
-                            .TryGetValue(cellValue.ToString(), out string result);
-                                cellValue = result ?? cellValue;
+                                cellValue = ((DateTime)cellValue).ToString("yyyy-MM-dd");
                             }
-
                         }
-                        worksheet.Cells[i + 2, j + 1].Value = cellValue;
                     }
+                    else if (dateArr != null && dateArr.Contains(propertyInfo[j].Name))
+                    {
+                        object value = propertyInfo[j].GetValue(list[i]);
+                        cellValue = value == null ? "" : ((DateTime)value).ToString("yyyy-MM-dd HH:mm:sss");
+                    }
+                    else
+                    {
+                        cellValue = propertyInfo[j].GetValue(list[i]);
+                    }
+                    if (cellValue != null && dicNoKeys.Exists(x => x.ColumnName == propertyInfo[j].Name))
+                    {
+                        if (selectList.Contains(propertyInfo[j].Name))
+                        {
+                            cellValue = string.Join(",", GetListValues(cellValue.ToString(), propertyInfo[j].Name));
+                        }
+                        else
+                        {
+                            cellOptions.Where(x => x.ColumnName == propertyInfo[j].Name)
+                        .Select(s => s.KeyValues)
+                        .FirstOrDefault()
+                        .TryGetValue(cellValue.ToString(), out string result);
+                            cellValue = result ?? cellValue;
+                        }
+
+                    }
+                    //图片导出（直接插入图片，优先使用本地/相对路径；累计超过10MB后改为链接）
+                    if (viewType == 1 && cellValue != null && RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
+                        string imgPath = cellValue.ToString();
+                        if (!string.IsNullOrWhiteSpace(imgPath))
+                        {
+                            worksheet.Cells[i + 2, j + 1].Value = cellValue;
+                        }
+                        continue;
+                    }
+                    if (propertyInfo[j].PropertyType == typeof(long) || propertyInfo[j].PropertyType == typeof(long?))
+                    {
+                        worksheet.Cells[i + 2, j + 1].Style.Numberformat.Format = "@";
+                        cellValue = cellValue?.ToString();
+                    }
+                    worksheet.Cells[i + 2, j + 1].Value = cellValue;
                 }
-
-                package.SaveAs(new FileInfo(fullPath));
             }
-            return fullPath;
+            if (string.IsNullOrEmpty(fullPath))
+            {
+                using var ms = new MemoryStream();
+                package.SaveAs(ms);
+                return (null, ms.ToArray());
+            }
+            package.SaveAs(new FileInfo(fullPath));
+            return (fullPath, null);
         }
-
 
         /// <summary>
         /// 获取导出的列的数据信息
@@ -531,7 +608,14 @@ namespace VOL.Core.Utilities
                 Requierd = c.IsNull > 0 ? false : true,
                 ColumnWidth = c.ColumnWidth ?? 90,
                 EditType = c.EditType,
-                SearchType = c.SearchType
+                SearchType = c.SearchType,
+                //{ key: 1, value: 'img' },
+                //  { key: 2, value: 'excel' },
+                //  { key: 3, value: 'file' },
+                //  { key: 6, value: 'year(年)' },
+                //  { key: 4, value: 'date(年月日)' },
+                //  { key: 5, value: 'month(年月)' }
+                ViewType = c.IsImage
 
             }).ToList();
 
@@ -593,7 +677,7 @@ namespace VOL.Core.Utilities
                 Action<ExcelWorksheet, int, int, object> onFillCell = null,
                 Action<ExcelWorksheet> saveBefore = null)
         {
-            path = path ?? $"Download/ExcelExport/{ DateTime.Now.ToString("yyyyyMMdd")}/";
+            path = path ?? $"Download/ExcelExport/{DateTime.Now.ToString("yyyyyMMdd")}/";
             string fullPath = path.MapPath();
             fileName = Guid.NewGuid() + "_" + fileName;
             if (!Directory.Exists(fullPath)) Directory.CreateDirectory(fullPath);
@@ -645,9 +729,25 @@ namespace VOL.Core.Utilities
             }
             return path + fileName;
         }
+        private static Dictionary<string, string> GetHeaderMap<T>(Expression<Func<T, Dictionary<object, string>>> headerMap = null)
+        {
+            if (headerMap == null)
+            {
+                return null;
+            }
+            Dictionary<string, string> headerMapDic = headerMapDic = new Dictionary<string, string>();
 
-
+            foreach (var exp in ((ListInitExpression)headerMap.Body).Initializers)
+            {
+                string key = exp.Arguments[0] is MemberExpression ?
+                (exp.Arguments[0] as MemberExpression).Member.Name.ToString()
+                : ((exp.Arguments[0] as UnaryExpression).Operand as MemberExpression).Member.Name;
+                headerMapDic.Add(key, ((exp.Arguments[1] as ConstantExpression).Value.ToString()));
+            }
+            return headerMapDic;
+        }
     }
+
 
     public class CellOptions
     {
@@ -657,9 +757,10 @@ namespace VOL.Core.Utilities
         public int ColumnWidth { get; set; }//导出列的宽度,代码生成维护的宽度
         public bool Requierd { get; set; } //是否必填
         public int Index { get; set; }//列所在模板的序号(导入用)
-        //2021.01.24修复多选类型，导出excel文件没有转换数据源的问题
+                                      //2021.01.24修复多选类型，导出excel文件没有转换数据源的问题
         public string EditType { get; set; }
         public string SearchType { get; set; }
+        public int? ViewType { get; set; }
         //对应字典项维护的Key,Value
         public Dictionary<string, string> KeyValues { get; set; }
         //public string Value { get; set; } //对应字典项维护的Value

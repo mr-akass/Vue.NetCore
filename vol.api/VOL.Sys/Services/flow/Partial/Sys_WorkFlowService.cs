@@ -80,7 +80,7 @@ namespace VOL.Sys.Services
             return base.Add(saveDataModel);
         }
         List<Sys_WorkFlowStep> add;
-        List<Sys_WorkFlowStep> update;
+        List<Sys_WorkFlowStep> update = new List<Sys_WorkFlowStep>();
         public override WebResponseContent Update(SaveModel saveModel)
         {
 
@@ -107,7 +107,10 @@ namespace VOL.Sys.Services
                 //删除的节点
                 var delIds = steps.Where(x => !stepsClone.Any(c => c.StepId == x.StepId))
                  .Select(s => s.WorkStepFlow_Id).ToList();
-                delKeys.AddRange(delIds.Select(s => s as object));
+                if (delKeys != null)
+                {
+                    delKeys.AddRange(delIds.Select(s => s as object));
+                }
 
                 //新增的节点
                 var newSteps = stepsClone.Where(x => !steps.Any(c => c.StepId == x.StepId))
@@ -117,7 +120,12 @@ namespace VOL.Sys.Services
                     item.WorkStepFlow_Id = Guid.NewGuid();
                 }
                 add.AddRange(newSteps);
-                update = updateList as List<Sys_WorkFlowStep>;
+                if (updateList != null)
+                {
+                    update = (updateList as List<Sys_WorkFlowStep>).Select(x => x).ToList();
+                    (updateList as List<Sys_WorkFlowStep>).Clear();
+                }
+
                 //修改的节点
                 var updateSteps = stepsClone.Where(x => steps.Any(c => c.StepId == x.StepId))
                 .ToList();
@@ -139,10 +147,15 @@ namespace VOL.Sys.Services
 
             UpdateOnExecuted = (Sys_WorkFlow workFlow, object addList, object updateList, List<object> delKeys) =>
             {
-                repository.UpdateRange((List<Sys_WorkFlowStep>)updateList);
-                _stepRepository.DeleteWithKeys(delKeys.ToArray());
-                repository.SaveChanges();
-                WorkFlowManager.UpdateFlowData(workFlow, (List<Sys_WorkFlowStep>)addList);
+                if (update?.Count > 0)
+                {
+                    repository.UpdateRange(update);
+                    repository.SaveChanges();
+                }
+                if (addList != null)
+                {
+                    WorkFlowManager.UpdateFlowData(workFlow, (List<Sys_WorkFlowStep>)addList);
+                }
                 return webResponse.OK();
             };
 

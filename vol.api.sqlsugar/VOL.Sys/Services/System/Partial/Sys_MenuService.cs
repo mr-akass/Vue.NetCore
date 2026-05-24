@@ -121,9 +121,9 @@ namespace VOL.Sys.Services
         /// 获取当前用户所有菜单与权限
         /// </summary>
         /// <returns></returns>
-        public async Task<object> GetCurrentMenuActionList()
+        public object GetCurrentMenuActionList()
         {
-            return await GetMenuActionList(UserContext.Current.RoleId);
+            return GetMenuActionList(UserContext.Current.RoleId);
         }
 
         /// <summary>
@@ -131,12 +131,11 @@ namespace VOL.Sys.Services
         /// </summary>
         /// <param name="roleId"></param>
         /// <returns></returns>
-        public async Task<object> GetMenuActionList(int roleId)
+        public object GetMenuActionList(int roleId)
         {
-            //2020.12.27增加菜单界面上不显示，但可以分配权限
             if (UserContext.IsRoleIdSuperAdmin(roleId))
             {
-                return await Task.Run(() => GetAllMenu()
+                return GetAllMenu()
                 .Where(c => c.MenuType == UserContext.MenuType)
                 .Select(x =>
                 new
@@ -149,7 +148,7 @@ namespace VOL.Sys.Services
                     x.Enable,
                     x.TableName, // 2022.03.26增移动端加菜单类型
                     permission = x.Actions.Select(s => s.Value).ToArray()
-                }).ToList());
+                }).ToList();
             }
 
             var menu = from a in UserContext.Current.Permissions

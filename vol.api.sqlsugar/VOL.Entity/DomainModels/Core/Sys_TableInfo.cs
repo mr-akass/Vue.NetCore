@@ -1,9 +1,11 @@
-﻿using VOL.Entity.SystemModels;
+﻿using SqlSugar;
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Collections.Generic;
-using SqlSugar;
+using VOL.Entity;
+using VOL.Entity.SystemModels;
+
 
 namespace VOL.Entity.DomainModels
 {
@@ -12,8 +14,8 @@ namespace VOL.Entity.DomainModels
     public class Sys_TableInfo : BaseEntity
     {
         [Key]
-        [Column(TypeName = "int")]
         [SugarColumn(IsPrimaryKey = true, IsIdentity = true)]
+        [Column(TypeName = "int")]
         public int Table_Id { get; set; }
         [Editable(true)]
         [Column(TypeName = "int")]
@@ -49,8 +51,6 @@ namespace VOL.Entity.DomainModels
         [Editable(true)]
         public string ExpressField { get; set; }
         [Editable(true)]
-        public string DBServer { get; set; }
-        [Editable(true)]
         public string SortName { get; set; }
         [Editable(true)]
         public string DetailCnName { get; set; }
@@ -64,8 +64,49 @@ namespace VOL.Entity.DomainModels
         public int? Enable { get; set; }
 
 
+
         [Editable(true)]
         public string CnName { get; set; }
+
+  
+
+        /// <summary>
+        /// 显示所有查询条件
+        /// </summary>
+        [Editable(true)]
+        public int? FixedSearch { get; set; }
+
+
+
+
+        [Editable(true)]
+        public string MainKeyField { get; set; }
+
+        /// <summary>
+        /// Text1
+        /// </summary>
+        [Editable(true)]
+        public string Text1 { get; set; }
+
+        /// <summary>
+        /// Text2
+        /// </summary>
+        [Editable(true)]
+        public string Text2 { get; set; }
+
+        /// <summary>
+        /// 快捷查询字段
+        /// </summary>
+        [Editable(true)]
+        public string QuickQueryFields { get; set; }
+
+        public int? AsyncApi { get; set; }
+
+        /// <summary>
+        /// 列表显示明细表
+        /// </summary>
+        [Editable(true)]
+        public int? ShowDetail { get; set; }
 
         [ForeignKey("Table_Id")]
         [Navigate(NavigateType.OneToMany, nameof(Table_Id), nameof(Table_Id))]

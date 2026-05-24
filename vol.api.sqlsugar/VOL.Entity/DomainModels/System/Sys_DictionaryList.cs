@@ -122,6 +122,13 @@ namespace VOL.Entity.DomainModels
        [Column(TypeName="datetime")]
        public DateTime? ModifyDate { get; set; }
 
-       
+
+        /// <summary>
+        /// 数据源选项颜色
+        /// </summary>
+        [MaxLength(30)]
+        [Column(TypeName = "nvarchar(100)")]
+        [Editable(true)]
+        public string Color { get; set; }
     }
 }

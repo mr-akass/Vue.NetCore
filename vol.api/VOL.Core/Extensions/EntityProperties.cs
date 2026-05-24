@@ -50,6 +50,7 @@ namespace VOL.Core.Extensions
             return queryable.Where(field.CreateExpression<T>(values, LinqExpressionType.In));
         }
 
+
         public static IQueryable<T> WhereIF<T>(this IQueryable<T> queryable,bool checkCondition, Expression<Func<T, bool>> predicate)
         {
             if (checkCondition)
@@ -58,6 +59,7 @@ namespace VOL.Core.Extensions
             }
             return queryable;
         }
+
         /// <summary>
         /// 如果值为null则不生成条件
         /// </summary>
@@ -931,7 +933,7 @@ namespace VOL.Core.Extensions
                     //判断双字节与单字段
                     else if (length < 8000 &&
                         ((dbType.Substring(0, 1) != "n"
-                        && Encoding.UTF8.GetBytes(val.ToCharArray()).Length > length)
+                        && Encoding.GetEncoding("GBK").GetBytes(val.ToCharArray()).Length > length)
                          || val.Length > length)
                          )
                     {
@@ -1073,26 +1075,26 @@ namespace VOL.Core.Extensions
         /// <param name="dic"></param>
         /// <param name="removeNotContains">移除不存在字段</param>
         /// <returns></returns>
-        public static string ValidateDicInEntity(this Type typeinfo, Dictionary<string, object> dic, bool removeNotContains, string[] ignoreFields = null)
+        public static string ValidateDicInEntity(this Type typeinfo, Dictionary<string, object> dic, bool removeNotContains, string[] ignoreFields = null, bool requireAllField = true)
         {
-            return typeinfo.ValidateDicInEntity(dic, removeNotContains, true, ignoreFields);
+            return typeinfo.ValidateDicInEntity(dic, removeNotContains, true, ignoreFields, requireAllField: requireAllField);
         }
 
-        public static string ValidateDicInEntity(this Type type, List<Dictionary<string, object>> dicList, bool removeNotContains, bool removerKey, string[] ignoreFields = null)
+        public static string ValidateDicInEntity(this Type type, List<Dictionary<string, object>> dicList, bool removeNotContains, bool removerKey, string[] ignoreFields = null, bool requireAllField = true)
         {
             PropertyInfo[] propertyInfo = type.GetProperties();
             string reslutMsg = string.Empty;
             foreach (Dictionary<string, object> dic in dicList)
             {
-                reslutMsg = type.ValidateDicInEntity(dic, propertyInfo, removeNotContains, removerKey, ignoreFields);
+                reslutMsg = type.ValidateDicInEntity(dic, propertyInfo, removeNotContains, removerKey, ignoreFields, requireAllField: requireAllField);
                 if (!string.IsNullOrEmpty(reslutMsg))
                     return reslutMsg;
             }
             return reslutMsg;
         }
-        public static string ValidateDicInEntity(this Type type, Dictionary<string, object> dic, bool removeNotContains, bool removerKey, string[] ignoreFields = null)
+        public static string ValidateDicInEntity(this Type type, Dictionary<string, object> dic, bool removeNotContains, bool removerKey, string[] ignoreFields = null, bool requireAllField = true)
         {
-            return type.ValidateDicInEntity(dic, null, removeNotContains, removerKey, ignoreFields);
+            return type.ValidateDicInEntity(dic, null, removeNotContains, removerKey, ignoreFields,requireAllField: requireAllField);
         }
         /// <summary>
         /// 判断hash的列是否为对应的实体，并且值是否有效
@@ -1102,7 +1104,7 @@ namespace VOL.Core.Extensions
         /// <param name="removeNotContains">移除不存在字段</param>
         /// <param name="removerKey">移除主键</param>
         /// <returns></returns>
-        private static string ValidateDicInEntity(this Type typeinfo, Dictionary<string, object> dic, PropertyInfo[] propertyInfo, bool removeNotContains, bool removerKey, string[] ignoreFields = null)
+        private static string ValidateDicInEntity(this Type typeinfo, Dictionary<string, object> dic, PropertyInfo[] propertyInfo, bool removeNotContains, bool removerKey, string[] ignoreFields = null,bool requireAllField=true)
         {
             if (dic == null || dic.Count == 0) { return "参数无效"; }
             if (propertyInfo == null)
@@ -1132,7 +1134,7 @@ namespace VOL.Core.Extensions
                 {
                     //移除主键默认为新增数据，将不在编辑列中的有默认值的数据设置为默认值
                     //如果为true默认为添加功能，添加操作所有不能为空的列也必须要提交
-                    if (property.GetCustomAttributes(typeof(RequiredAttribute)).Count() > 0
+                    if (requireAllField&&property.GetCustomAttributes(typeof(RequiredAttribute)).Count() > 0
                         && property.PropertyType != typeof(int)
                         && property.PropertyType != typeof(long)
                         && property.PropertyType != typeof(byte)
@@ -1154,7 +1156,10 @@ namespace VOL.Core.Extensions
                     {
                         return property.GetTypeCustomValue<DisplayAttribute>(x => x.Name) + "没有配置好Model为编辑列";
                     }
-                    dic.Remove(property.Name);
+                    if (removeNotContains)
+                    {
+                        dic.Remove(property.Name);
+                    }
                     continue;
                 }
                 ////移除忽略的不保存的数据
@@ -1179,8 +1184,12 @@ namespace VOL.Core.Extensions
         /// </summary>
         /// <param name="type"></param>
         /// <returns></returns>
-        public static string GetEntityTableName(this Type type)
+        public static string GetEntityTableName(this Type type, bool dbName = true)
         {
+            if (!dbName)
+            {
+                return type.Name;
+            }
             Attribute attribute = type.GetCustomAttribute(typeof(EntityAttribute));
             if (attribute != null && attribute is EntityAttribute)
             {

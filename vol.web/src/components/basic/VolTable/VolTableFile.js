@@ -36,7 +36,7 @@ export const getPath = (url, column, proxy) => {
       if (arr.length > 0) {
         fileInfo.push({
           name: arr.pop(),
-          path: proxy.base.isUrl(file) ? file : proxy.http.ipAddress + file
+          path: proxy.base.isUrl(file) ? file : (proxy.$global.oss?.url || proxy.http.ipAddress) + file
         })
       }
     }
@@ -45,9 +45,14 @@ export const getPath = (url, column, proxy) => {
 }
 
 export const previewImg = (proxy, row, column, index, viewRref) => {
+
   const access_token = proxy.base.getAccessToken()
-  const imgs = getPath(row[column.field], column,proxy).map((x) => {
+  const imgs = getPath(row[column.field], column, proxy).map((x) => {
     return x.path + access_token
   })
+  if (column.click) {
+    column.click(column, row, file, imgs)
+    return;
+  }
   viewRref.show(imgs, index)
 }

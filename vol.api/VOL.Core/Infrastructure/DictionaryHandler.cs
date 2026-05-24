@@ -47,7 +47,7 @@ namespace VOL.Core.Infrastructure
         /// <returns></returns>
         public static string GetRolesSql(string originalSql)
         {
-         
+
             if (UserContext.Current.IsSuperAdmin)
             {
                 return originalSql;
@@ -61,15 +61,15 @@ namespace VOL.Core.Infrastructure
                 originalSql = $"SELECT \"Role_Id\" AS \"id\",\"ParentId\" as  \"parentId\",\"Role_Id\" AS  \"key\",\"RoleName\" AS \"value\" FROM \"Sys_Role\""
                    + $" where \"Role_Id\"  in ({string.Join(',', roleIds)})";
             }
-            else    if (DBType.Name == DbCurrentType.Oracle.ToString())
-                {
-                    originalSql = $"SELECT Role_Id AS \"id\",ParentId as  \"parentId\",Role_Id AS  \"key\",RoleName AS \"value\" FROM SYS_ROLE" +
-                    $" where where \"Role_Id\"  in ({string.Join(',', roleIds)}) ";
-
-                }
-            else {
-                originalSql= $@"SELECT Role_Id as 'key',Role_Id AS id,ParentId AS parentId,RoleName as 'value' FROM Sys_Role 
-                      WHERE Enable=1  and Role_Id in ({string.Join(',', roleIds)})"; 
+            else if (DBType.Name == DbCurrentType.Oracle.ToString() || DBType.Name == DbCurrentType.DM.ToString())
+            {
+                originalSql = "SELECT ROLE_ID AS \"id\", PARENTID AS \"parentId\", ROLE_ID AS \"key\", ROLENAME AS \"value\" FROM SYS_ROLE  where 1=1 ";
+                return $" {originalSql}  and  ROLE_ID in ({string.Join(',', roleIds)})";
+            }
+            else
+            {
+                originalSql = $@"SELECT Role_Id as 'key',Role_Id AS id,ParentId AS parentId,RoleName as 'value' FROM Sys_Role 
+                      WHERE Enable=1  and Role_Id in ({string.Join(',', roleIds)})";
             }
             return originalSql;
         }

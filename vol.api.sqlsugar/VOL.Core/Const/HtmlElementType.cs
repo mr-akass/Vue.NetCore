@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace VOL.Core.Const
+﻿namespace VOL.Core.Const
 {
     public struct HtmlElementType
     {
@@ -13,7 +9,7 @@ namespace VOL.Core.Const
         public const string checkbox = "checkbox";
         public const string textarea = "textarea";
         public const string thanorequal = "thanorequal";
-        public const string lessorequal = "lessorequal"; 
+        public const string lessorequal = "lessorequal";
 
 
         public const string gt = "gt";
@@ -26,5 +22,7 @@ namespace VOL.Core.Const
         public const string LessOrequal = "<=";
         public const string Contains = "in";
         public const string Equal = "=";
+        public const string NotEqual = "!=";
+
     }
 }

@@ -1300,7 +1300,7 @@ CREATE TABLE [dbo].[Sys_TableInfo](
 	[OrderNo] [int] NULL,
 	[ParentId] [int] NULL,
 	[RichText] [nvarchar](100) NULL,
-	[SortName] [nvarchar](50) NULL,
+	[SortName] [nvarchar](2000) NULL,
 	[TableName] [nvarchar](50) NULL,
 	[TableTrueName] [nvarchar](100) NULL,
 	[UploadField] [nvarchar](100) NULL,
@@ -6241,7 +6241,54 @@ EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'审核人' , @
 GO
 EXEC sys.sp_addextendedproperty @name=N'MS_Description', @value=N'审核状态' , @level0type=N'SCHEMA',@level0name=N'dbo', @level1type=N'TABLE',@level1name=N'Sys_WorkFlowTableStep', @level2type=N'COLUMN',@level2name=N'AuditStatus'
 GO
+ALTER TABLE Sys_TableInfo ADD AsyncApi  int;
+ALTER TABLE Sys_TableInfo ADD Text1  nvarchar(2000);
+ALTER TABLE Sys_TableInfo ADD Text2  nvarchar(2000);
+-- 快捷查询字段
+ALTER TABLE Sys_TableInfo ADD  QuickQueryFields nvarchar(2000);
+-- 列表显示明细表
+ALTER TABLE Sys_TableInfo ADD  ShowDetail int
+
+-- 占位文本
+ALTER TABLE Sys_TableColumn ADD Placeholder nvarchar(500);
+-- 新建默认值
+ALTER TABLE Sys_TableColumn ADD AddDefaultValue nvarchar(500);
+-- 文件上传参数
+ALTER TABLE Sys_TableColumn ADD UploadOption nvarchar(500);
+-- 日期查询范围
+ALTER TABLE Sys_TableColumn ADD SearchDateRange int;
+-- 查询默认值
+ALTER TABLE Sys_TableColumn ADD SearchDefaultValue nvarchar(500);
+-- 编辑表单自定义校验
+ALTER TABLE Sys_TableColumn ADD CustomValidate nvarchar(2000);
+
+-- 字段唯一值
+ALTER TABLE Sys_TableColumn ADD IsUnique int;
+-- 合计类型
+ALTER TABLE Sys_TableColumn ADD SummaryType varchar(100);
+-- 表头筛选
+ALTER TABLE Sys_TableColumn ADD HeaderFilter int;
+-- 表格对齐方式
+ALTER TABLE Sys_TableColumn ADD TextAlign varchar(100);
+-- 表格超出提示
+ALTER TABLE Sys_TableColumn ADD ShowOverflowTooltip int;
+-- 固定列
+ALTER TABLE Sys_TableColumn ADD FixedColumn varchar(100);
+-- 列计算公式
+ALTER TABLE Sys_TableColumn ADD CalcColumn nvarchar(2000);
+
+ALTER TABLE Sys_TableColumn ADD Text1  nvarchar(2000);
+ALTER TABLE Sys_TableColumn ADD Text2  nvarchar(2000);
+
+ALTER TABLE Sys_DictionaryList ADD Color  varchar(100);
+ALTER TABLE Sys_TableInfo ALTER COLUMN SortName nvarchar(2000);
+ALTER TABLE Sys_TableInfo ADD FixedSearch int;
+ALTER TABLE Sys_TableInfo ADD MainKeyField nvarchar(500);
+
+GO
 USE [master]
 GO
 ALTER DATABASE vol_v3 SET  READ_WRITE 
 GO
+
+

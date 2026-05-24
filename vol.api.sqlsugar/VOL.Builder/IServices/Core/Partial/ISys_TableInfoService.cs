@@ -17,9 +17,9 @@ namespace VOL.Builder.IServices
         string CreateServices(string tableName, string nameSpace, string foldername, bool webController, bool apiController);
 
 
-        string CreateVuePage(Sys_TableInfo sysTableInfo, string vuePath);
+        string CreateVuePage(Sys_TableInfo sysTableInfo, string vuePath, int tableId, string table);
 
-        object LoadTable(int parentId, string tableName, string columnCNName, string nameSpace, string foldername, int table_Id, bool isTreeLoad);
+        object LoadTable(Sys_TableInfo sysTableInfo, int parentId, string tableName, string columnCNName, string nameSpace, string foldername, int table_Id, bool isTreeLoad, string dbServer);
         Task<WebResponseContent> SyncTable(string tableName);
         Task<WebResponseContent> DelTree(int table_Id);
     }

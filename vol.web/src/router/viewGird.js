@@ -203,11 +203,11 @@ let viewgird = [
     path: '/ProductionState',
     name: 'ProductionState',
     component: () => import('@/views/mes/state/ProductionState.vue')
-  }    ,{
-        path: '/TestService',
-        name: 'TestService',
-        component: () => import('@/views/mes/mes/TestService.vue')
-    }]
+  }, {
+    path: '/TestService',
+    name: 'TestService',
+    component: () => import('@/views/mes/mes/TestService.vue')
+  }]
 
 //上面的demo、MES开头的都是示例菜单，可以任意删除 
 export default viewgird

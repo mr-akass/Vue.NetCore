@@ -1,10 +1,12 @@
 import { auditTabelOnClick, showAudit, saveAuditClick } from './ViewGridAuditConfig.jsx'
 import { customFilterClick, initFormOptionType } from './ViewGridProvider.jsx'
+import { setViewReadonly } from "./ViewGridInitButtonsAuthFields.jsx";
 import {
   onDelete,
   onAdd,
   onEdit,
   saveClick,
+  onPrintClick,
   exportData,
   importData,
   onImportExcelAfter
@@ -31,6 +33,12 @@ export default (proxy, props, ctx, dataConfig) => {
         value: proxy.$route.query.id
       })
     }
+    if (proxy.$route.query?.viewflow) {
+      param.value = 'viewflow'
+    }
+    if (dataConfig.dyPage || props.generic) {
+      param.tableName = props.table.name
+    }
     //新版支持查询前方法异步处理
     let status = await proxy.searchBefore.call(proxy, param)
     if (!status) {
@@ -38,6 +46,10 @@ export default (proxy, props, ctx, dataConfig) => {
       return
     }
     status = await props.searchBefore(param)
+    if (!status) {
+      callBack(false)
+      return
+    }
     callBack(status)
   }
 
@@ -58,7 +70,7 @@ export default (proxy, props, ctx, dataConfig) => {
       props.loadTreeChildren(tree, treeNode, resolve)
       return
     }
-    proxy.loadTreeChildren.call(proxy, tree, treeNode, resolve)
+    proxy.loadTreeChildren && proxy.loadTreeChildren.call(proxy, tree, treeNode, resolve)
   }
 
   const loadTreeChildren = (tree, treeNode, resolve) => {
@@ -78,12 +90,18 @@ export default (proxy, props, ctx, dataConfig) => {
   }
 
   const rowOnClick = ({ row, column, event }) => {
+    //主表显示明细表
+    if (dataConfig.showFooterDetail) {
+      proxy.$refs.grdiDetailFooterRef?.loadViewGridFooterDetail(row)
+    }
     proxy.rowClick.call(proxy, { row, column, event })
     props.rowClick({ row, column, event })
+    dataConfig.dyScript.rowClick?.({ row, column, event })
   }
   const rowOnDbClick = ({ row, column, event }) => {
     proxy.rowDbClick.call(proxy, { row, column, event })
     props.rowDbClick({ row, column, event })
+    dataConfig.dyScript.rowDbClick?.({ row, column, event })
   }
   //表格编辑
   const tableBeginEdit = (row, column, index) => {
@@ -134,7 +152,7 @@ export default (proxy, props, ctx, dataConfig) => {
   const registerClick = (click) => {
     debounce(() => {
       click && click.call(proxy)
-    }, 1000)
+    }, 500)
   }
 
   const changeDropdown = (btnName, v1) => {
@@ -162,7 +180,7 @@ export default (proxy, props, ctx, dataConfig) => {
   }
   //删除
   const del = async (rows) => {
-    onDelete(proxy, props, rows)
+    onDelete(proxy, props, rows, dataConfig)
   }
 
   //复制数据
@@ -189,18 +207,25 @@ export default (proxy, props, ctx, dataConfig) => {
   const audit = async (rows, isAnti, view) => {
     showAudit(proxy, props, dataConfig, rows, isAnti, view)
   }
+
+  const cancelAudit = (rows, status) => {
+  }
+  const urgentAudit = (rows) => {
+  }
   //表格点击查看流程
   const auditTabelClick = (row) => {
     auditTabelOnClick(proxy, props, dataConfig, row)
   }
-  //反审
   const antiAudit = async (rows) => {
-    //反审
-    audit(rows, true)
+  }
+  const auditAntiAfter = async (res, auditParam, rows, attachFile) => {
   }
   //保存审批
   const saveAudit = async (params, rows, callback) => {
-    saveAuditClick(proxy, props, params, rows, callback)
+    saveAuditClick(proxy, props, params, rows, callback,dataConfig)
+  }
+  //打印
+  const printClick = async (rows) => {
   }
   //弹出框关闭事件
   const onGridModelClose = (iconClick) => {
@@ -213,7 +238,7 @@ export default (proxy, props, ctx, dataConfig) => {
     }
     proxy.onModelClose.call(proxy, iconClick)
   }
-  proxy.export = (isDetail) => {
+  proxy.export = (isDetail, table) => {
     exportData(proxy, props, dataConfig, isDetail)
   }
   proxy.import = (isDetail) => {
@@ -225,15 +250,57 @@ export default (proxy, props, ctx, dataConfig) => {
   }
   //导入前
   const importExcelBefore = (formData, callback) => {
-    if (!proxy.importBefore.call(proxy, formData, callback)) {
+    //明细表导入
+    if (dataConfig?.boxModel?.value) {
+      if (props.importDetailBefore?.(formData, dataConfig.upload.currentDetail || {}, dataConfig.currentAction == 'Add') === false) {
+        return false
+      }
+      return true;
+    }
+    if (proxy.importBefore.call(proxy, formData, callback, dataConfig?.boxModel?.value) === false) {
       return false
     }
-    return props.importBefore(formData, callback)
+    if (props.importBefore(formData, callback, dataConfig?.boxModel?.value) === false) {
+      return false
+    }
+    return true;
   }
 
   const onPrintModelClose = () => {
     proxy.printModelClose.call(proxy)
     props.printModelClose();
+  }
+
+  const onHeaderDragend = ({ newWidth, oldWidth, column, event }) => {
+    proxy.headerDragend.call(proxy, { newWidth, oldWidth, column, event });
+    props.headerDragend({ newWidth, oldWidth, column, event })
+  }
+
+  const onDetailHeaderDragend = ({ newWidth, oldWidth, column, event }, table) => {
+    proxy.detailHeaderDragend.call(proxy, { newWidth, oldWidth, column, event }, table);
+    props.detailHeaderDragend({ newWidth, oldWidth, column, event }, table)
+  }
+
+  const onFullscreen = (b, orgHeight, fullHeight) => {
+    if (!dataConfig.detailOptions.backHeight) {
+      dataConfig.detailOptions.backHeight = dataConfig.detailOptions.height
+    }
+    if (dataConfig.detailOptions.columns?.length) {
+      //全屏
+      if (b) {
+        dataConfig.detailOptions.height = dataConfig.detailOptions.height + fullHeight - orgHeight;
+      } else {
+        dataConfig.detailOptions.height = dataConfig.detailOptions.backHeight
+      }
+      proxy.getTable().setHeight(dataConfig.detailOptions.height)
+
+    }
+    proxy.fullscreen.call(proxy, b, orgHeight, fullHeight);
+    props.fullscreen(b, orgHeight, fullHeight)
+  }
+
+  const viewClick = (row) => {
+
   }
 
   return {
@@ -262,12 +329,20 @@ export default (proxy, props, ctx, dataConfig) => {
     del,
     copyData,
     audit,
+    cancelAudit,
+    urgentAudit,
     auditTabelClick,
     antiAudit,
     saveAudit,
     onGridModelClose,
+    printClick,
     importExcelAfter,
     importExcelBefore,
-    onPrintModelClose
+    onPrintModelClose,
+    onHeaderDragend,
+    onDetailHeaderDragend,
+    auditAntiAfter,
+    onFullscreen,
+    viewClick
   }
 }

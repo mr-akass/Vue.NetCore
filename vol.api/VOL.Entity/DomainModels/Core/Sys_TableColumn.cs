@@ -240,7 +240,112 @@ namespace VOL.Entity.DomainModels
         [Editable(true)]
         public int? IsColumnData { get; set; }
 
-   
+
+        /// <summary>
+        /// 占位文本
+        /// </summary>
+        [Display(Name = "占位文本")]
+        [Editable(true)]
+        public string Placeholder { get; set; }
+
+        /// <summary>
+        /// 新建默认值
+        /// </summary>
+        [Display(Name = "新建默认值")]
+        [Editable(true)]
+        public string AddDefaultValue { get; set; }
+
+        /// <summary>
+        /// 文件上传参数
+        /// </summary>
+        [Display(Name = "文件上传参数")]
+        [Editable(true)]
+        public string UploadOption { get; set; }
+
+        /// <summary>
+        /// 日期查询范围
+        /// </summary>
+        [Display(Name = "日期查询范围")]
+        [Editable(true)]
+        [Column(TypeName = "int")]
+        public int? SearchDateRange { get; set; }
+
+        /// <summary>
+        /// 查询默认值
+        /// </summary>
+        [Display(Name = "查询默认值")]
+        [Editable(true)]
+        public string SearchDefaultValue { get; set; }
+
+        /// <summary>
+        /// 编辑表单自定义校验
+        /// </summary>
+        [Display(Name = "编辑表单自定义校验")]
+        [Editable(true)]
+        public string CustomValidate { get; set; }
+
+        /// <summary>
+        /// 字段唯一值
+        /// </summary>
+        [Display(Name = "字段唯一值")]
+        [Editable(true)]
+        public int? IsUnique { get; set; }
+
+        /// <summary>
+        /// 合计类型
+        /// </summary>
+        [Display(Name = "合计类型")]
+        [Editable(true)]
+        public string SummaryType { get; set; }
+
+        /// <summary>
+        /// 表头筛选
+        /// </summary>
+        [Display(Name = "表头筛选")]
+        [Editable(true)]
+        public int? HeaderFilter { get; set; }
+
+        /// <summary>
+        /// 表格对齐方式
+        /// </summary>
+        [Display(Name = "表格对齐方式")]
+        [Editable(true)]
+        public string TextAlign { get; set; }
+
+        /// <summary>
+        /// 表格超出提示
+        /// </summary>
+        [Display(Name = "表格超出提示")]
+        [Editable(true)]
+        public int? ShowOverflowTooltip { get; set; }
+
+        /// <summary>
+        /// 固定列
+        /// </summary>
+        [Display(Name = "固定列")]
+        [Editable(true)]
+        public string FixedColumn { get; set; }
+
+        /// <summary>
+        /// 列计算公式
+        /// </summary>
+        [Display(Name = "列计算公式")]
+        [Editable(true)]
+        public string CalcColumn { get; set; }
+
+        /// <summary>
+        /// Text1
+        /// </summary>
+        [Display(Name = "Text1")]
+        [Editable(true)]
+        public string Text1 { get; set; }
+
+        /// <summary>
+        /// Text2
+        /// </summary>
+        [Display(Name = "Text2")]
+        [Editable(true)]
+        public string Text2 { get; set; }
 
     }
 }

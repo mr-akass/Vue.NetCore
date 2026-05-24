@@ -47,8 +47,6 @@ namespace VOL.Entity.DomainModels
         [Editable(true)]
         public string ExpressField { get; set; }
         [Editable(true)]
-        public string DBServer { get; set; }
-        [Editable(true)]
         public string SortName { get; set; }
         [Editable(true)]
         public string DetailCnName { get; set; }
@@ -64,6 +62,26 @@ namespace VOL.Entity.DomainModels
 
         [Editable(true)]
         public string CnName { get; set; }
+
+        public string MainKeyField { get; set; }
+
+        /// <summary>
+        /// 显示所有查询条件
+        /// </summary>
+        [Editable(true)]
+        public int? FixedSearch { get; set; }
+        /// <summary>
+        /// 列表显示明细表
+        /// </summary>
+        [Editable(true)]
+        public int? ShowDetail { get; set; }
+        /// <summary>
+        /// 快捷查询字段
+        /// </summary>
+        [Editable(true)]
+        public string QuickQueryFields { get; set; }
+
+        public int? AsyncApi { get; set; }
 
         [ForeignKey("Table_Id")]
         public List<Sys_TableColumn> TableColumns { get; set; }

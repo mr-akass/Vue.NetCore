@@ -15,16 +15,16 @@
         <div class="login-text-small">WELCOME TO LOGIN</div>
         <div class="item">
           <div class="input-icon el-icon-user"></div>
-          <input type="text" v-focus v-model="userInfo.userName" :placeholder="$ts(['请输入', '账号'])" />
+          <input type="text"  v-model="userInfo.userName" :placeholder="$ts(['请输入', '账号'])" />
         </div>
         <div class="item">
           <div class="input-icon el-icon-lock"></div>
-          <input type="password" v-focus v-model="userInfo.password" :placeholder="$ts(['请输入', '密码'])" />
+          <input type="password" v-model="userInfo.password" :placeholder="$ts(['请输入', '密码'])" />
         </div>
         <div class="item">
           <div class="input-icon el-icon-mobile"></div>
 
-          <input v-focus type="text" v-model="userInfo.verificationCode" :placeholder="$ts(['请输入', '验证码'])" />
+          <input  type="text" v-model="userInfo.verificationCode" :placeholder="$ts(['请输入', '验证码'])" />
           <div class="code" @click="getVierificationCode">
             <img v-show="codeImgSrc != ''" :src="codeImgSrc" />
           </div>

@@ -1,9 +1,7 @@
 ﻿using EntityFrameworkCore.UseRowNumberForPaging;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.DependencyModel;
-using Microsoft.Extensions.Logging;
 using System;
 using System.Linq;
 using System.Reflection;
@@ -18,7 +16,7 @@ using VOL.Entity.SystemModels;
 
 namespace VOL.Core.EFDbContext
 {
-    public class VOLContext : DbContext, IDependency
+    public class VOLContext : BaseDbContext, IDependency
     {
         /// <summary>
         /// 数据库连接名称 
@@ -58,10 +56,7 @@ namespace VOL.Core.EFDbContext
         {
             return base.Set<TEntity>();
         }
-        //public DbSet<TEntity> Set<TEntity>(bool trackAll = false) where TEntity : class
-        //{
-        //    return base.Set<TEntity>();
-        //}
+
         /// <summary>
         /// 设置跟踪状态
         /// </summary>
@@ -103,9 +98,11 @@ namespace VOL.Core.EFDbContext
             {
                 if (UseSqlserver2008)
                 {
-                   optionsBuilder.UseSqlServer(connectionString, x => x.UseRowNumberForPaging());
+                    optionsBuilder.UseSqlServer(connectionString, x => x.UseRowNumberForPaging());
                 }
-                optionsBuilder.UseSqlServer(connectionString, o => o.UseCompatibilityLevel(120));
+                else {
+                    optionsBuilder.UseSqlServer(connectionString, o => o.UseCompatibilityLevel(120));
+                }   
             }
             //默认禁用实体跟踪
             optionsBuilder = optionsBuilder.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
@@ -139,7 +136,7 @@ namespace VOL.Core.EFDbContext
                 }
 
                 //Oracle数据库指定表名与列名全部大写
-                if (DBType.Name == DbCurrentType.Oracle.ToString())
+                if (DBType.Name == DbCurrentType.Oracle.ToString()|| DBType.Name == DbCurrentType.DM.ToString())
                 {
                     foreach (var entity in modelBuilder.Model.GetEntityTypes())
                     {

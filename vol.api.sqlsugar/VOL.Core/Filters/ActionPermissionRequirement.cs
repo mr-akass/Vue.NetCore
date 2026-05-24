@@ -15,6 +15,10 @@ namespace VOL.Core.Filters
         /// </summary>
         public string TableAction { get; set; } = string.Empty;
         /// <summary>
+        /// 对表的操作/删除/查询等（多个权限数组）
+        /// </summary>
+        public string[] TableActions { get; set; }
+        /// <summary>
         /// 是否为框架定义的控制器
         /// </summary>
         public bool SysController { get; set; }

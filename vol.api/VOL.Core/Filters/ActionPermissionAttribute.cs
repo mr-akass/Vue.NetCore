@@ -64,12 +64,39 @@ namespace VOL.Core.Filters
         {
             this.SetActionPermissionRequirement("", tableAction, true, isApi);
         }
+        /// <summary>
+        /// 解析组合枚举值为权限数组
+        /// </summary>
+        private string[] ParseActionPermissionOptions(ActionPermissionOptions tableAction)
+        {
+            List<string> actions = new List<string>();
+            Array enumValues = Enum.GetValues(typeof(ActionPermissionOptions));
+
+            foreach (ActionPermissionOptions item in enumValues)
+            {
+                // 跳过值为0的项（如果存在）
+                int itemValue = (int)item;
+                if (itemValue == 0) continue;
+
+                // 使用 HasFlag 检查是否包含该权限
+                // 对于位标志枚举，HasFlag 会检查是否设置了该位
+                if (tableAction.HasFlag(item))
+                {
+                    actions.Add(item.ToString());
+                }
+            }
+
+            return actions.ToArray();
+        }
+
         private void SetActionPermissionRequirement(string tableName, ActionPermissionOptions tableAction,
             int[] roleId, bool sysController = false, bool isApi = false)
         {
+            string[] tableActions = ParseActionPermissionOptions(tableAction);
+
             Arguments = new object[] { new ActionPermissionRequirement() {
                  SysController=sysController,
-                 TableAction=tableAction.ToString(),
+                 TableActions=tableActions, // 存储权限数组
                  TableName=tableName,
                  IsApi = isApi,
                  RoleIds=roleId

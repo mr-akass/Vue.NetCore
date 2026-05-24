@@ -120,6 +120,10 @@ namespace VOL.Entity.DomainModels
        [Column(TypeName="datetime")]
        public DateTime? ModifyDate { get; set; }
 
-       
+        [MaxLength(100)]
+        [Column(TypeName = "nvarchar(30)")]
+        [Editable(true)]
+        public string Color { get; set; }
+
     }
 }

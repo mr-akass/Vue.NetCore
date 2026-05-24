@@ -1,7 +1,10 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using System.Linq;
 using System.Threading.Tasks;
 using VOL.Core.Enums;
 using VOL.Core.Filters;
+using VOL.Core.ManageUser;
+using VOL.Core.UserManager;
 using VOL.Entity.DomainModels;
 using VOL.Sys.IServices;
 
@@ -9,16 +12,15 @@ namespace VOL.Sys.Controllers
 {
     public partial class Sys_MenuController
     {
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <returns></returns>
         [HttpGet, HttpPost, Route("getTreeMenu")]
-        //2019.10.24屏蔽用户查询自己权限菜单
-        // [ApiActionPermission("Sys_Menu", ActionPermissionOptions.Search)]
-        public async Task<IActionResult> GetTreeMenu()
+        public IActionResult GetTreeMenu()
         {
-            return Json(await _service.GetCurrentMenuActionList());
+            var menu = _service.GetCurrentMenuActionList();
+            return Json(new
+            {
+                menu,
+                asyncApi = TableColumnContext.TableInfo.Where(x => x.AsyncApi == 1).Select(s => s.TableName).ToList(),
+            });
         }
         [HttpPost, Route("getMenu")]
         [ApiActionPermission("Sys_Menu", ActionPermissionOptions.Search)]

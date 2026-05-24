@@ -2925,7 +2925,7 @@ CREATE TABLE `Sys_TableInfo`  (
   `OrderNo` int(11) NULL DEFAULT NULL,
   `ParentId` int(11) NULL DEFAULT NULL,
   `RichText` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
-  `SortName` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
+  `SortName` varchar(2000) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `TableName` varchar(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `TableTrueName` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
   `UploadField` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL,
@@ -3334,3 +3334,48 @@ CREATE TABLE `TestService`  (
 INSERT INTO `TestService` VALUES ('C0737155-AC39-4F35-87DC-22DD83896CAD', '这是业务数据库', '这是业务数据库。。', '2023-05-19 11:46:34', 3362, '测试管理员', NULL, NULL, NULL);
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- mysql脚本
+ALTER TABLE Sys_TableInfo ADD AsyncApi  int;
+ALTER TABLE Sys_TableInfo ADD Text1  varchar(2000);
+ALTER TABLE Sys_TableInfo ADD Text2  varchar(2000);
+-- 快捷查询字段
+ALTER TABLE Sys_TableInfo ADD  QuickQueryFields varchar(2000);
+-- 列表显示明细表
+ALTER TABLE Sys_TableInfo ADD  ShowDetail int;
+
+-- 占位文本
+ALTER TABLE Sys_TableColumn ADD Placeholder varchar(500);
+-- 新建默认值
+ALTER TABLE Sys_TableColumn ADD AddDefaultValue varchar(500);
+-- 文件上传参数
+ALTER TABLE Sys_TableColumn ADD UploadOption varchar(500);
+-- 日期查询范围
+ALTER TABLE Sys_TableColumn ADD SearchDateRange int;
+-- 查询默认值
+ALTER TABLE Sys_TableColumn ADD SearchDefaultValue varchar(500);
+-- 编辑表单自定义校验
+ALTER TABLE Sys_TableColumn ADD CustomValidate varchar(2000);
+
+-- 字段唯一值
+ALTER TABLE Sys_TableColumn ADD IsUnique int;
+-- 合计类型
+ALTER TABLE Sys_TableColumn ADD SummaryType varchar(100);
+-- 表头筛选
+ALTER TABLE Sys_TableColumn ADD HeaderFilter int;
+-- 表格对齐方式
+ALTER TABLE Sys_TableColumn ADD TextAlign varchar(100);
+-- 表格超出提示
+ALTER TABLE Sys_TableColumn ADD ShowOverflowTooltip int;
+-- 固定列
+ALTER TABLE Sys_TableColumn ADD FixedColumn varchar(100);
+-- 列计算公式
+ALTER TABLE Sys_TableColumn ADD CalcColumn varchar(2000);
+
+ALTER TABLE Sys_TableColumn ADD Text1  varchar(2000);
+ALTER TABLE Sys_TableColumn ADD Text2  varchar(2000);
+ALTER TABLE Sys_DictionaryList ADD Color  varchar(100);
+ALTER TABLE Sys_TableInfo MODIFY COLUMN SortName varchar(2000);
+ALTER TABLE Sys_TableInfo ADD FixedSearch int;
+ALTER TABLE Sys_TableInfo ADD MainKeyField varchar(500);
+

@@ -18,7 +18,7 @@ export default function () {
         labelWidth: {
             // 表单左边label文字标签的宽度
             type: Number,
-            default: 85
+            default: 90
         },
         formRules: {
             // 表单配置规则，如字段类型，是否必填
@@ -45,7 +45,12 @@ export default function () {
         select2Count: {
             //超出数量显示select2组件
             type: Number,
-            default: 6000
-        }
+            default: 1500
+        },
+        eventNext: {
+            //按回车后是否自动跳转到下一个标签
+            type: Boolean,
+            default: false
+        },
     }
 }

@@ -2044,7 +2044,7 @@ CREATE TABLE "public"."Sys_Menu" (
 INSERT INTO "public"."Sys_Menu" VALUES (2, '用户管理', '[{"text":"查询","value":"Search"}]', 'el-icon-user', NULL, 1, 9000, '.', 61, NULL, '2017-08-28 12:21:13', '2017-08-28 11:12:45', '2025-03-24 01:26:46', '超级管理员', 0);
 INSERT INTO "public"."Sys_Menu" VALUES (3, '角色管理', '[{"text":"查询","value":"Search"},{"text":"新建","value":"Add"},{"text":"删除","value":"Delete"},{"text":"编辑","value":"Update"},{"text":"导出","value":"Export"}]', '', NULL, 1, 900, 'Sys_Role', 2, '/Sys_Role', '2017-09-12 16:20:02', '2017-08-28 14:19:13', '2023-05-08 02:10:41', '超级管理员', 0);
 INSERT INTO "public"."Sys_Menu" VALUES (5, '日志管理', '[{"text":"查询","value":"Search"}]', 'el-icon-date', NULL, 1, 1300, 'xxx', 61, '/', '2017-09-22 17:59:37', '2017-09-22 17:59:37', '2025-03-23 23:23:28', '超级管理员', 0);
-INSERT INTO "public"."Sys_Menu" VALUES (6, '系统日志', '[{"text":"查询","value":"Search"},{"text":"删除","value":"Delete"},{"text":"导出","value":"Export"}]', '', NULL, 1, 0, 'Sys_Log', 5, '/Sys_Log/Manager', '2017-09-22 18:00:25', '2017-09-22 18:0:25', '2019-08-14 16:20:35', '超级管理员', NULL);
+INSERT INTO "public"."Sys_Menu" VALUES (6, '系统日志', '[{"text":"查询","value":"Search"},{"text":"删除","value":"Delete"},{"text":"导出","value":"Export"}]', '', NULL, 1, 0, 'Sys_Log', 5, '/Sys_Log', '2017-09-22 18:00:25', '2017-09-22 18:0:25', '2019-08-14 16:20:35', '超级管理员', NULL);
 INSERT INTO "public"."Sys_Menu" VALUES (8, '图表开发', '[{"text":"查询","value":"Search"}]', 'el-icon-monitor', NULL, 1, 10000, '.', 32, '/ProductionState', NULL, NULL, '2025-03-24 02:52:54', '超级管理员', 0);
 INSERT INTO "public"."Sys_Menu" VALUES (9, '用户管理', '[{"text":"查询","value":"Search"},{"text":"新建","value":"Add"},{"text":"删除","value":"Delete"},{"text":"编辑","value":"Update"},{"text":"导入","value":"Import"},{"text":"导出","value":"Export"},{"text":"上传","value":"Upload"},{"text":"审核","value":"Audit"}]', '', NULL, 1, 2000, 'Sys_User', 2, '/Sys_User', NULL, NULL, '2023-05-08 02:11:52', '超级管理员', 0);
 INSERT INTO "public"."Sys_Menu" VALUES (32, '基础组件', '[{"text":"查询","value":"Search"}]', 'el-icon-full-screen', NULL, 1, 1720, '/', 0, '', NULL, NULL, '2025-03-24 01:25:40', '超级管理员', 0);
@@ -3142,7 +3142,7 @@ CREATE TABLE "public"."Sys_TableInfo" (
   "OrderNo" int4,
   "ParentId" int4,
   "RichText" varchar(100) COLLATE "pg_catalog"."default",
-  "SortName" varchar(50) COLLATE "pg_catalog"."default",
+  "SortName" varchar(2000) COLLATE "pg_catalog"."default",
   "TableName" varchar(50) COLLATE "pg_catalog"."default",
   "TableTrueName" varchar(100) COLLATE "pg_catalog"."default",
   "UploadField" varchar(100) COLLATE "pg_catalog"."default",
@@ -3897,3 +3897,47 @@ ALTER TABLE "public"."TestDb" ADD CONSTRAINT "TestDb_pkey" PRIMARY KEY ("Id");
 -- Primary Key structure for table TestService
 -- ----------------------------
 ALTER TABLE "public"."TestService" ADD CONSTRAINT "TestService_pkey" PRIMARY KEY ("Id");
+
+--pgsql脚本
+ALTER TABLE "Sys_TableInfo" ADD "AsyncApi"  int;
+ALTER TABLE "Sys_TableInfo" ADD "Text1" VARCHAR(2000);
+ALTER TABLE "Sys_TableInfo" ADD "Text2" VARCHAR(2000);
+-- 快捷查询字段
+ALTER TABLE "Sys_TableInfo" ADD "QuickQueryFields" VARCHAR(2000);
+-- 列表显示明细表
+ALTER TABLE "Sys_TableInfo" ADD "ShowDetail" INT;
+
+-- 占位文本
+ALTER TABLE "Sys_TableColumn" ADD "Placeholder" VARCHAR(500);
+-- 新建默认值
+ALTER TABLE "Sys_TableColumn" ADD "AddDefaultValue" VARCHAR(500);
+-- 文件上传参数
+ALTER TABLE "Sys_TableColumn" ADD "UploadOption" VARCHAR(500);
+-- 日期查询范围
+ALTER TABLE "Sys_TableColumn" ADD "SearchDateRange" INT;
+-- 查询默认值
+ALTER TABLE "Sys_TableColumn" ADD "SearchDefaultValue" VARCHAR(500);
+-- 编辑表单自定义校验
+ALTER TABLE "Sys_TableColumn" ADD "CustomValidate" VARCHAR(2000);
+
+-- 字段唯一值
+ALTER TABLE "Sys_TableColumn" ADD "IsUnique" INT;
+-- 合计类型
+ALTER TABLE "Sys_TableColumn" ADD "SummaryType" VARCHAR(100);
+-- 表头筛选
+ALTER TABLE "Sys_TableColumn" ADD "HeaderFilter" INT;
+-- 表格对齐方式
+ALTER TABLE "Sys_TableColumn" ADD "TextAlign" VARCHAR(100);
+-- 表格超出提示
+ALTER TABLE "Sys_TableColumn" ADD "ShowOverflowTooltip" INT;
+-- 固定列
+ALTER TABLE "Sys_TableColumn" ADD "FixedColumn" VARCHAR(100);
+-- 列计算公式
+ALTER TABLE "Sys_TableColumn" ADD "CalcColumn" VARCHAR(2000);
+
+ALTER TABLE "Sys_TableColumn" ADD "Text1" VARCHAR(2000);
+ALTER TABLE "Sys_TableColumn" ADD "Text2" VARCHAR(2000);
+ALTER TABLE "Sys_DictionaryList" ADD "Color" VARCHAR(100);
+ALTER TABLE "Sys_TableInfo" ALTER COLUMN "SortName" TYPE VARCHAR(2000);
+ALTER TABLE "Sys_TableInfo" ADD "FixedSearch" INT;
+ALTER TABLE "Sys_TableInfo" ADD "MainKeyField" VARCHAR(500);

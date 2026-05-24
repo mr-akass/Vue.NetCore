@@ -4,15 +4,17 @@ using System.Text;
 
 namespace VOL.Core.Enums
 {
+    [Flags]
     public enum ActionPermissionOptions
     {
-        Add = 0,
-        Delete = 1,
+        //注意添加的枚举值一定要是前面的值倍数，即x2
+        Add = 1,
         Update = 2,
-        Search=3,
-        Export=4,
-        Audit,
-        Upload,//上传文件
-        Import //导入表数据Excel
+        Search = 4,
+        Export = 8,
+        Delete = 16,
+        Audit = 32,
+        Upload = 64,//上传文件
+        Import = 128//导入表数据Excel
     }
 }

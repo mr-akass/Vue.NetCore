@@ -1,70 +1,74 @@
-<!--
-*Author：jxx
- *Contact：283591387@qq.com
- *代码由框架生成,任何更改都可能导致被代码生成器覆盖
- *业务请在@/extension/system/flow/Sys_WorkFlowStep.js此处编写
- -->
 <template>
     <view-grid ref="grid"
                :columns="columns"
                :detail="detail"
+               :details="details"
                :editFormFields="editFormFields"
                :editFormOptions="editFormOptions"
                :searchFormFields="searchFormFields"
                :searchFormOptions="searchFormOptions"
                :table="table"
-               :extend="extend">
+               :extend="extend"
+               :onInit="onInit"
+               :onInited="onInited"
+               :searchBefore="searchBefore"
+               :searchAfter="searchAfter"
+               :addBefore="addBefore"
+               :updateBefore="updateBefore"
+               :rowClick="rowClick"
+               :modelOpenBefore="modelOpenBefore"
+               :modelOpenAfter="modelOpenAfter">
+        <!-- 自定义组件数据槽扩展，更多数据槽slot见文档 -->
+        <template #gridHeader>
+        </template>
     </view-grid>
 </template>
-<script>
+<script setup lang="jsx">
     import extend from "@/extension/sys/flow/Sys_WorkFlowStep.jsx";
-    import { ref, defineComponent } from "vue";
-    export default defineComponent({
-        setup() {
-            const table = ref({
-                key: 'WorkStepFlow_Id',
-                footer: "Foots",
-                cnName: '审批节点配置',
-                name: 'flow/Sys_WorkFlowStep',
-                url: "/Sys_WorkFlowStep/",
-                sortName: "CreateDate"
-            });
-            const editFormFields = ref({});
-            const editFormOptions = ref([]);
-            const searchFormFields = ref({});
-            const searchFormOptions = ref([]);
-            const columns = ref([{field:'WorkStepFlow_Id',title:'WorkStepFlow_Id',type:'guid',width:110,hidden:true,readonly:true,require:true,align:'left'},
-                       {field:'WorkFlow_Id',title:'流程主表id',type:'guid',width:110,align:'left',sort:true},
-                       {field:'StepId',title:'流程节点Id',type:'string',width:120,align:'left'},
-                       {field:'StepName',title:'节点名称',type:'string',width:110,align:'left'},
-                       {field:'StepType',title:'节点类型(1=按用户审批,2=按角色审批)',type:'int',width:110,align:'left'},
-                       {field:'StepValue',title:'审批用户id或角色id',type:'int',width:110,align:'left'},
-                       {field:'Remark',title:'备注',type:'string',width:220,align:'left'},
-                       {field:'OrderId',title:'审批顺序',type:'int',width:80,align:'left'},
-                       {field:'CreateDate',title:'创建时间',type:'datetime',width:110,align:'left',sort:true},
-                       {field:'CreateID',title:'CreateID',type:'int',width:80,hidden:true,align:'left'},
-                       {field:'Creator',title:'创建人',type:'string',width:130,align:'left'},
-                       {field:'Enable',title:'Enable',type:'byte',width:110,align:'left'},
-                       {field:'Modifier',title:'修改人',type:'string',width:130,align:'left'},
-                       {field:'ModifyDate',title:'修改时间',type:'datetime',width:110,align:'left',sort:true},
-                       {field:'ModifyID',title:'ModifyID',type:'int',width:80,hidden:true,align:'left'}]);
-            const detail = ref({
-                cnName: "#detailCnName",
-                table: "#detailTable",
-                columns: [],
-                sortName: "",
-                key: ""
-            });
-            return {
-                table,
-                extend,
-                editFormFields,
-                editFormOptions,
-                searchFormFields,
-                searchFormOptions,
-                columns,
-                detail,
-            };
-        },
-    });
+    import viewOptions from './Sys_WorkFlowStep/options.js'
+    import { ref, reactive, getCurrentInstance, watch, onMounted } from "vue";
+    const grid = ref(null);
+    const { proxy } = getCurrentInstance()
+    //http请求，proxy.http.post/get
+    const { table, editFormFields, editFormOptions, searchFormFields, searchFormOptions, columns, detail, details } = reactive(viewOptions())
+
+    let gridRef;//对应[表.jsx]文件中this.使用方式一样
+    //生成对象属性初始化
+    const onInit = async ($vm) => {
+        gridRef = $vm;
+    }
+    //生成对象属性初始化后,操作明细表配置用到
+    const onInited = async () => {
+    }
+    const searchBefore = async (param) => {
+        //界面查询前,可以给param.wheres添加查询参数
+        //返回false，则不会执行查询
+        return true;
+    }
+    const searchAfter = async (rows, result) => {
+        return true;
+    }
+    const addBefore = async (formData, isCopyClick) => {
+        //新建保存前formData为对象，包括明细表，可以给给表单设置值，自己输出看formData的值
+        return true;
+    }
+    const updateBefore = async (formData) => {
+        //编辑保存前formData为对象，包括明细表、删除行的Id
+        return true;
+    }
+    const rowClick = ({ row, column, event }) => {
+        //查询界面点击行事件
+        // grid.value.toggleRowSelection(row); //单击行时选中当前行;
+    }
+    const modelOpenBefore=async(row,currentAction,isCopyClick) => {
+		//弹出框打开前
+        return true;//返回false，不会打开弹出框
+    }
+    const modelOpenAfter=(row,currentAction,isCopyClick) => {
+        //弹出框打开后方法,设置表单默认值,按钮操作等
+    }
+    //监听表单输入，做实时计算
+    //watch(() => editFormFields.字段,(newValue, oldValue) => {	})
+    //对外暴露数据
+    defineExpose({})
 </script>

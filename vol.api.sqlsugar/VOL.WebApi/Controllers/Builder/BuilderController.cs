@@ -1,24 +1,26 @@
-﻿using VOL.Builder.IServices;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using System;
 using System.Threading.Tasks;
+using VOL.Builder.IRepositories;
+using VOL.Builder.IServices;
 using VOL.Core.Filters;
 using VOL.Entity.DomainModels;
 
 namespace VOL.WebApi.Controllers.Builder
 {
     [JWTAuthorize]
-    [Route("/api/Builder")]
+    [Route("api/Builder")]
     public class BuilderController : Controller
     {
         private ISys_TableInfoService Service;
-        public BuilderController(ISys_TableInfoService service)
+        private ISys_TableInfoRepository _repository;
+        public BuilderController(ISys_TableInfoService service, ISys_TableInfoRepository repository)
         {
             Service = service;
+            _repository = repository;
         }
         [HttpPost]
         [Route("GetTableTree")]
-        //[ApiActionPermission(ActionRolePermission.SuperAdmin)]
         public async Task<ActionResult> GetTableTree()
         {
             try
@@ -36,9 +38,19 @@ namespace VOL.WebApi.Controllers.Builder
         [Route("CreateVuePage")]
         [ApiActionPermission(ActionRolePermission.SuperAdmin)]
         [HttpPost]
-        public ActionResult CreateVuePage([FromBody] Sys_TableInfo sysTableInfo, string vuePath)
+        public ActionResult CreateVuePage([FromBody] Sys_TableInfo sysTableInfo, string vuePath, int tableId, string table)
         {
-            return Content(Service.CreateVuePage(sysTableInfo, vuePath));
+            return Content(Service.CreateVuePage(sysTableInfo, vuePath, tableId, table));
+        }
+
+        [Route("loadOptions")]
+
+        [HttpPost]
+        public ActionResult CreateVuePage(int tableId, string table)
+        {
+            var res = Service.CreateVuePage(null, null, tableId, table);
+
+            return Json(new { status = res.Contains("fun"), content = res });
         }
         [Route("CreateModel")]
         [ApiActionPermission(ActionRolePermission.SuperAdmin)]
@@ -63,10 +75,9 @@ namespace VOL.WebApi.Controllers.Builder
         }
         [Route("LoadTableInfo")]
         [HttpPost]
-        public ActionResult LoadTable(int parentId, string tableName, string columnCNName, string nameSpace, string foldername, int table_Id, bool isTreeLoad)
+        public ActionResult LoadTable([FromBody] Sys_TableInfo sysTableInfo, int parentId, string tableName, string columnCNName, string nameSpace, string foldername, int table_Id, bool isTreeLoad, string dbServer, bool gengeneric)
         {
-            return Json(Service.LoadTable(parentId, tableName, columnCNName, nameSpace, foldername, table_Id, isTreeLoad));
-
+            return Json(Service.LoadTable(sysTableInfo, parentId, tableName, columnCNName, nameSpace, foldername, table_Id, isTreeLoad, dbServer));
         }
         [Route("delTree")]
         [ApiActionPermission(ActionRolePermission.SuperAdmin)]
@@ -81,6 +92,14 @@ namespace VOL.WebApi.Controllers.Builder
         public async Task<ActionResult> SyncTable(string tableName)
         {
             return Json(await Service.SyncTable(tableName));
+        }
+
+        [Route("getDyTable")]
+        [HttpPost]
+        public async Task<ActionResult> GetDyTable()
+        {
+            await Task.CompletedTask;
+            return Json(Array.Empty<object>());
         }
     }
 }

@@ -42,7 +42,7 @@ namespace VOL.Sys.Services
                 config = s.Config,
                 dbSql = s.DbSql,
                 list = s.Sys_DictionaryList.OrderByDescending(o => o.OrderNo)
-                          .Select(list => new { key = list.DicValue, value = list.DicName })
+                        .Select(list => new { key = list.DicValue, value = list.DicName, color = list.Color })
             }).ToList();
 
             object GetSourceData(string dicNo, string dbSql, object data)
@@ -51,7 +51,7 @@ namespace VOL.Sys.Services
                 dbSql = DictionaryHandler.GetCustomDBSql(dicNo, dbSql);
                 if (string.IsNullOrEmpty(dbSql))
                 {
-                    return data as object;
+                    return data;
                 }
                 return repository.SqlSugarClient.QueryList<object>(dbSql, null);
             }

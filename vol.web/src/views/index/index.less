@@ -392,10 +392,56 @@ img:not([src]) {
   // .h-link a {
   //   color: rgb(33, 33, 33) !important;
   // }
-  .h-link a:hover,
-  .h-link-a-acitve {
+  .header-info .h-link a:hover {
     color: #0069d8 !important;
-    //background: #f6f6f6;
+  }
+
+  // 顶栏导航 + 快捷链接（选中/悬停统一胶囊样式）
+  .header-text > .h-link {
+    gap: 2px;
+
+    & + .h-link {
+      margin-left: 4px;
+    }
+
+    a {
+      color: #5f6570;
+      height: auto;
+      min-height: 32px;
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      transition:
+        color 0.2s ease,
+        background-color 0.2s ease;
+
+      i {
+        margin-right: 5px;
+        font-size: 14px;
+        color: #909399;
+        transition: color 0.2s ease;
+      }
+
+      &:hover {
+        color: #1677ff !important;
+        background: rgba(22, 119, 255, 0.08);
+
+        i {
+          color: #1677ff;
+        }
+      }
+
+      &.h-link-a-acitve,
+      &.h-link-a-acitve:hover {
+        color: #1677ff !important;
+        background: rgba(22, 119, 255, 0.14);
+        font-weight: 500;
+
+        i {
+          color: #1677ff;
+        }
+      }
+    }
   }
 
   .vol-aside .vol-menu {
@@ -805,6 +851,46 @@ img:not([src]) {
   }
 }
 
+// 彩色顶栏：菜单搜索框（不影响 dark 主题）
+.vol-theme-blue,
+.vol-theme-red,
+.vol-theme-green,
+.vol-theme-orange,
+.vol-theme-red2,
+.vol-theme-green2,
+.vol-theme-orange2 {
+  .vol-menu-filter {
+    ::v-deep(.el-select__wrapper) {
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: none;
+    }
+
+    ::v-deep(.el-select__placeholder) {
+      color: rgba(255, 255, 255, 0.82);
+    }
+
+    ::v-deep(.el-select__selected-item),
+    ::v-deep(.el-select__input),
+    ::v-deep(input) {
+      color: #fff;
+    }
+
+    ::v-deep(.el-select__prefix) {
+      color: #fff;
+
+      i,
+      .el-icon-search {
+        color: #fff;
+      }
+    }
+
+    ::v-deep(.el-select__caret),
+    ::v-deep(.el-select__suffix .el-icon) {
+      color: rgba(255, 255, 255, 0.88);
+    }
+  }
+}
 
 .header-text {
   width: 0;
@@ -824,3 +910,56 @@ img:not([src]) {
     border-top: 1px solid #e9e9e973;
     border-bottom:1px solid #e9e9e9;
   }
+  
+
+.header-text--top {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-width: 0;
+  .h-link-top-nav {
+    // flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow: hidden;
+  }
+  .h-link:not(.h-link-top-nav) {
+    flex-shrink: 0;
+  }
+  :deep(.el-dropdown){
+    height: 100%;
+    .el-tooltip__trigger{
+      outline: 0;
+    }
+  }
+}
+.h-link-top-nav-measure {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: -1;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.h-link-top-nav-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 0 10px;
+  height: 100%;
+  font-size: 14px;
+  color: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.h-link-top-nav-more--active {
+  color: var(--el-color-primary, #2f54eb);
+  font-weight: 600;
+}

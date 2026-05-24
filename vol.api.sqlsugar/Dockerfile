@@ -37,7 +37,7 @@
 #docker build -t volapi:1.0 .
 #docker run -d --name volapi -v /etc/timezone:/etc/timezone:ro -v /etc/localtime:/etc/localtime:ro --restart=always  --log-opt max-size=300m --log-opt max-file=3 --network=host volapi:1.0 
 
-FROM mcr.microsoft.com/dotnet/sdk:6.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /app
 COPY . .
 RUN apt-get update -y && apt-get install -y libgdiplus && apt-get clean && ln -s /usr/lib/libgdiplus.so /usr/lib/gdiplus.dll

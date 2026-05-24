@@ -5,7 +5,7 @@ const rule = {
     decimal: /(^[\-0-9][0-9]*(.[0-9]+)?)$/,
     number: /(^[\-0-9][0-9]*([0-9]+)?)$/
 }
-const inputTypeArr = ['text', 'string', 'mail', 'textarea', 'password', 'editor']
+const inputTypeArr = ['text', 'string', 'mail', 'textarea', 'password', 'editor','like']
 const types = {
     int: 'number',
     byte: 'number',
@@ -14,7 +14,7 @@ const types = {
     bool: 'boolean',
     date: 'datetime',
     date: 'date',
-    mail: 'email'
+    mail: 'email',
 }
 function isReadonly(item) {
     return item.readonly || item.disabled
@@ -29,7 +29,7 @@ function validatorPhone(ruleOption, value, $ts, callback) {
     }
     callback()
 }
-function validatorPwd(ruleOption, value,$ts, callback) {
+function validatorPwd(ruleOption, value, $ts, callback) {
     if (!ruleOption.required && !value && value != '0') {
         return callback()
     }
@@ -145,7 +145,7 @@ export default function (item, formFields, $ts) {
 
     if (!item.hasOwnProperty('type')) item.type = 'text'
 
-    if (inputTypeArr.indexOf(item.type) != -1) {
+    if (!item.type || inputTypeArr.indexOf(item.type) != -1) {
         let message = $ts(
             [item.title, item.type == 'mail' ? '必须是一个邮箱地址' : '不能为空'],
             true
@@ -175,7 +175,13 @@ export default function (item, formFields, $ts) {
             required: item.required,
             message: $ts(['请选择', item.title], true),
             trigger: 'change',
-            type: 'string'
+            // type: 'string',
+            // validator: (rule, val, callback)=>{
+            //       if (!val&&val+''!=='0') {
+            //         return callback(new Error($ts('请选择')))
+            //       }
+            //       return callback()
+            // }
         }
     }
     if (
@@ -220,7 +226,7 @@ export default function (item, formFields, $ts) {
     }
 
     if (
-        ['select', 'selectList', 'checkbox', 'cascader', 'treeSelect'].indexOf(
+        ['select', 'selectList', 'checkbox', 'cascader', 'treeSelect', 'selectTable'].indexOf(
             item.type
         ) != -1
     ) {

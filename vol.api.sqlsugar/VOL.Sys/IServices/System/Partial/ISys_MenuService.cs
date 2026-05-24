@@ -12,9 +12,9 @@ namespace VOL.Sys.IServices
 
         List<Sys_Menu> GetUserMenuList(int roleId);
 
-        Task<object> GetCurrentMenuActionList();
+        object GetCurrentMenuActionList();
 
-        Task<object> GetMenuActionList(int roleId);
+        object GetMenuActionList(int roleId);
         Task<WebResponseContent> Save(Sys_Menu menu);
 
         Task<WebResponseContent> DelMenu(int menuId);
