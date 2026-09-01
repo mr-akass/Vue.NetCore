@@ -1,8 +1,0 @@
-不支持的关键字:“allowloadlocalinfile”。   at Microsoft.Data.Common.ConnectionString.DbConnectionOptions.ParseInternal(Dictionary`2 parsetable, String connectionString, Boolean buildChain, Dictionary`2 synonyms, Boolean firstKey)
-   at Microsoft.Data.SqlClient.SqlConnectionString..ctor(String connectionString)
-   at Microsoft.Data.SqlClient.SqlConnection.set_ConnectionString(String value)
-   at VOL.Core.DBManager.DBServerProvider.GetDbConnection(String connString) in E:\jxx\Vue.NetCore\vol.api\VOL.Core\DBManager\DBServerProvider.cs:line 86
-   at VOL.Core.DBManager.DBServerProvider.GetDbConnection(String connString, DbCurrentType dbCurrentType) in E:\jxx\Vue.NetCore\vol.api\VOL.Core\DBManager\DBServerProvider.cs:line 101
-   at VOL.Core.Dapper.SqlDapper.MSSqlBulkInsert(DataTable table, String tableName, SqlBulkCopyOptions sqlBulkCopyOptions, String dbKeyName) in E:\jxx\Vue.NetCore\vol.api\VOL.Core\Dapper\SqlDapper.cs:line 691
-   at VOL.Core.Dapper.SqlDapper.BulkInsert(DataTable table, String tableName, Nullable`1 sqlBulkCopyOptions, String fileName, String tmpPath) in E:\jxx\Vue.NetCore\vol.api\VOL.Core\Dapper\SqlDapper.cs:line 746
-   at VOL.Core.Services.Logger.Start() in E:\jxx\Vue.NetCore\vol.api\VOL.Core\Services\Logger.cs:line 186Microsoft.Data.SqlClient

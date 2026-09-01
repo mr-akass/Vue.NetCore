@@ -1,8 +1,0 @@
-ORA-01400: 无法将 NULL 插入 ("C##NETCOREDEV"."SYS_LOG"."ID")   at System.Data.Common.DbDataAdapter.UpdatedRowStatusErrors(RowUpdatedEventArgs rowUpdatedEvent, BatchCommandInfo[] batchCommands, Int32 commandCount)
-   at System.Data.Common.DbDataAdapter.UpdatedRowStatus(RowUpdatedEventArgs rowUpdatedEvent, BatchCommandInfo[] batchCommands, Int32 commandCount)
-   at System.Data.Common.DbDataAdapter.Update(DataRow[] dataRows, DataTableMapping tableMapping)
-   at Oracle.ManagedDataAccess.Client.OracleDataAdapter.Update(DataRow[] dataRows, DataTableMapping tableMapping)
-   at System.Data.Common.DbDataAdapter.Update(DataTable dataTable)
-   at VOL.Core.Dapper.SqlDapper.OralceBulkInsert(DataTable table, String tableName) in E:\jxx\vue.netcore\vol.api\VOL.Core\Dapper\SqlDapper.cs:line 809
-   at VOL.Core.Dapper.SqlDapper.BulkInsert(DataTable table, String tableName, Nullable`1 sqlBulkCopyOptions, String fileName, String tmpPath) in E:\jxx\vue.netcore\vol.api\VOL.Core\Dapper\SqlDapper.cs:line 743
-   at VOL.Core.Services.Logger.Start() in E:\jxx\vue.netcore\vol.api\VOL.Core\Services\Logger.cs:line 186Oracle Data Provider for .NET, Managed Driver

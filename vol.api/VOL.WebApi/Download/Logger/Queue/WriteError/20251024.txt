@@ -1,8 +1,0 @@
-42P01: 关系 "public.Sys_Log" 不存在   at Npgsql.Internal.NpgsqlConnector.ReadMessageLong(Boolean async, DataRowLoadingMode dataRowLoadingMode, Boolean readingNotifications, Boolean isReadingPrependedMessage)
-   at System.Runtime.CompilerServices.PoolingAsyncValueTaskMethodBuilder`1.StateMachineBox`1.System.Threading.Tasks.Sources.IValueTaskSource<TResult>.GetResult(Int16 token)
-   at Npgsql.NpgsqlBinaryImporter.Init(String copyFromCommand, Boolean async, CancellationToken cancellationToken)
-   at Npgsql.NpgsqlConnection.BeginBinaryImport(Boolean async, String copyFromCommand, CancellationToken cancellationToken)
-   at Npgsql.NpgsqlConnection.BeginBinaryImport(String copyFromCommand)
-   at VOL.Core.Dapper.SqlDapper.PGSqlBulkInsert(DataTable table, String tableName) in E:\jxx\vue.netcore\vol.api\VOL.Core\Dapper\SqlDapper.cs:line 938
-   at VOL.Core.Dapper.SqlDapper.BulkInsert(DataTable table, String tableName, Nullable`1 sqlBulkCopyOptions, String fileName, String tmpPath) in E:\jxx\vue.netcore\vol.api\VOL.Core\Dapper\SqlDapper.cs:line 732
-   at VOL.Core.Services.Logger.Start() in E:\jxx\vue.netcore\vol.api\VOL.Core\Services\Logger.cs:line 186Npgsql
