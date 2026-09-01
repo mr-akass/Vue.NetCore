@@ -49,7 +49,9 @@ namespace VOL.Core.Extensions
             var condition = dateField.CreateExpression<T>(dateNow, LinqExpressionType.ThanOrEqual);
             var field = codeField.GetExpressionPropertyFirst();
             var select = field.GetExpression<T, string>();
-            string orderNo = DbManger.Db.Queryable<T>().Where(condition)
+            //按实体路由取库：单据号是"查当天最大号+1"，如果实体配了[Entity(DBServer)]分到别的库，
+            //这里再走默认库就会查不到已有单据而永远从 0001 开始(默认库有同名表时更糟：号码互相覆盖)
+            string orderNo = EntityDbRouter.GetClient<T>().Queryable<T>().Where(condition)
                 .OrderByDescending(codeField)
                 .Select(select)
                 .FirstOrDefault()

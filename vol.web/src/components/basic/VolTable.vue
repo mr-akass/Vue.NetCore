@@ -85,13 +85,108 @@
         :show-overflow-tooltip="
          ( $global.table.showOverflowTooltip&&column.showOverflowTooltip!==false) || column.showOverflowTooltip
         "
-        :class-name="column.class"
-        :filters="column.filterData ? getFilters(column) : undefined"
-        :filter-method="column.filterData ? filterHandler : undefined"
+        :class-name="getColumnClass(column)"
       >
-        <template #filter-icon
-          ><el-icon> <Filter /> </el-icon
-        ></template>
+        <template v-if="column.filterData" #header>
+          <div style="display: flex; align-items: center; gap: 5px;">
+            <span
+              v-if="(column.require || column.required) && column.edit"
+              class="column-required"
+              >*</span
+            ><span :style="column.titleStyle">{{ $ts(column.title) }}</span>
+
+            <el-tooltip placement="top" v-if="column.tip">
+              <template #content>
+                <div v-html="column.tip.text"></div>
+              </template>
+              <i
+                :style="{ color: column.tip.color || '#7d7979' }"
+                @click="column.tip.click"
+                :class="column.tip.icon || 'el-icon-warning-outline'"
+              ></i>
+            </el-tooltip>
+
+            <el-popover
+              :visible="filterPopoverVisible[column.field]"
+              placement="bottom"
+              :width="240"
+              trigger="click"
+              popper-class="column-filter-popper"
+            >
+              <template #reference>
+                <el-icon
+                  class="column-filter-icon"
+                  :class="{ 'is-active': columnFilterValues[column.field]?.length > 0 }"
+                  @click="toggleFilterPopover(column)"
+                >
+                  <Filter />
+                </el-icon>
+              </template>
+              <div class="column-filter-popover">
+                <!-- 输入框：普通列输入关键字模糊查询；字典列客户端过滤选项；日期列不显示(勾选日期筛选) -->
+                <div
+                  class="filter-input-wrapper"
+                  v-if="column.type !== 'date' && column.type !== 'datetime'"
+                >
+                  <el-input
+                    v-model="columnFilterInputs[column.field]"
+                    :placeholder="column.bind ? $ts('搜索选项') : '搜索 ' + $ts(column.title)"
+                    size="default"
+                    clearable
+                    @keyup.enter="applyColumnFilter(column)"
+                  >
+                    <template #prefix>
+                      <el-icon><Search /></el-icon>
+                    </template>
+                  </el-input>
+                </div>
+
+                <!-- 多选框：字典列直接使用绑定数据源；其他列分批加载去重值，滚动到底部自动加载下一批 -->
+                <div class="filter-checkbox-wrapper" @scroll="onFilterOptionsScroll($event, column)">
+                  <el-checkbox-group v-model="columnFilterCheckboxValues[column.field]">
+                    <div
+                      v-for="option in getVisibleFilterOptions(column)"
+                      :key="option.value"
+                      class="filter-checkbox-item"
+                      :title="option.label"
+                    >
+                      <el-checkbox :label="option.value">{{ option.label }}</el-checkbox>
+                    </div>
+                  </el-checkbox-group>
+                  <div v-if="columnFilterLoading[column.field]" class="filter-loading">
+                    <el-icon class="is-loading"><Loading /></el-icon>
+                    <span>加载中...</span>
+                  </div>
+                  <div
+                    v-else-if="!column.bind && !hasMoreFilterOptions[column.field] && (columnFilterOptions[column.field]?.length || 0) > 30"
+                    class="filter-list-end"
+                  >
+                    已加载全部 (共 {{ columnFilterOptions[column.field]?.length || 0 }} 项)
+                  </div>
+                  <div
+                    v-if="!columnFilterLoading[column.field] && getVisibleFilterOptions(column).length === 0"
+                    class="filter-empty"
+                  >
+                    <el-icon><DocumentDelete /></el-icon>
+                    <div>暂无数据</div>
+                  </div>
+                </div>
+
+                <!-- 操作按钮 -->
+                <div class="filter-actions">
+                  <span
+                    v-if="(columnFilterCheckboxValues[column.field] || []).length > 0"
+                    class="filter-selected"
+                  >
+                    已选 {{ columnFilterCheckboxValues[column.field].length }}
+                  </span>
+                  <el-button size="small" @click="clearColumnFilter(column)">清空</el-button>
+                  <el-button size="small" type="primary" @click="applyColumnFilter(column)">确定</el-button>
+                </div>
+              </div>
+            </el-popover>
+          </div>
+        </template>
         <template #header>
           <table-render
             v-if="column.renderHeader"
@@ -630,6 +725,13 @@
             </div>
 
             <template v-else>{{ formatter(scope.row, column, true) }}</template>
+            <!-- 快捷复制：代码生成器勾选后值的后面显示复制图标(编辑态与自定义render的列不显示) -->
+            <i
+              v-if="column.quickCopy && hasQuickCopyText(scope.row, column)"
+              class="el-icon-document-copy quick-copy-icon"
+              :title="$ts('复制')"
+              @click.stop="quickCopyCell(scope.row, column)"
+            ></i>
           </template>
         </template>
       </el-table-column>
@@ -679,6 +781,7 @@ import {
   watch,
   watchEffect,
 } from "vue";
+import { Filter, Search, Loading, DocumentDelete } from '@element-plus/icons-vue';
 import VolTableProps from "./VolTable/VolTableProps.js";
 import TableRender from "./VolTable/VolTableRender";
 import { initDataSource } from "./VolTable/VolTableDicData.js";
@@ -713,6 +816,8 @@ import {
   delTableRow,
   resetTable,
   initPaginations,
+  hasQuickCopyText as hasQuickCopyTextValue,
+  quickCopyCell as copyCellToClipboard,
 } from "./VolTable/VolTableProvider.js";
 import {
   getCellColor,
@@ -795,6 +900,16 @@ realHeight.value =
   (!props.height && !props.maxHeight) || props.maxHeight
     ? null
     : props.height || null;
+// 筛选相关的响应式变量
+const filterPopoverVisible = reactive({});
+const columnFilterInputs = reactive({});
+const columnFilterValues = reactive({});
+const columnFilterCheckboxValues = reactive({});
+const columnFilterOptions = reactive({});
+const columnFilterLoading = reactive({});
+const hasMoreFilterOptions = reactive({});
+const columnFilterPageIndexes = reactive({}); // 记录每列已加载的页数
+
 // 没有定义高度与最大高度，使用table默认值
 if (props.dragPosition) {
   realMaxHeight.value = 500;
@@ -853,8 +968,14 @@ const initConfig = () => {
 const getSummaryData = () => {
   return summaryData;
 };
-const getCellClass = ({ row, column, rowIndex, columnIndex }) => {
-  const b = props.columns.some((x) => {
+//列的class：快捷复制的列加标记类，样式里把值的div改成行内(否则复制图标会掉到下一行)
+const getColumnClass = (column) => {
+  if (!column.quickCopy) {
+    return column.class;
+  }
+  return (column.class ? column.class + " " : "") + "quick-copy-cell";
+};
+const getCellClass = ({ row, column, rowIndex, columnIndex }) => {  const b = props.columns.some((x) => {
     return (
       x.field === column.property &&
       x.edit &&
@@ -866,8 +987,7 @@ const getCellClass = ({ row, column, rowIndex, columnIndex }) => {
     return props.columns[columnIndex].class;
   }
 };
-const getCellStyle = (option) => {
-  // 2020.12.13增加设置单元格颜色
+const getCellStyle = (option) => {  // 2020.12.13增加设置单元格颜色
   if (!option.column.property || !cellStyleColumns[option.column.property])
     return;
   return cellStyleColumns[option.column.property](
@@ -1226,8 +1346,14 @@ const getColor = (row, column) => {
 const formatter = (row, column, template) => {
   return cellFormatter(proxy, row, column, template);
 };
-const formatterClick = (row, column, event) => {
-  if (column.click) {
+//快捷复制(代码生成器勾选快捷复制的列)
+const hasQuickCopyText = (row, column) => {
+  return hasQuickCopyTextValue(proxy, row, column);
+};
+const quickCopyCell = (row, column) => {
+  copyCellToClipboard(proxy, row, column);
+};
+const formatterClick = (row, column, event) => {  if (column.click) {
     column.click(row, column, event);
     event && event.stopPropagation && event.stopPropagation();
   } else {
@@ -1317,6 +1443,273 @@ const tableDataV2 = computed(() => {
   });
   return _rows;
 });
+
+// 筛选相关方法
+const toggleFilterPopover = (column) => {
+  const field = column.field;
+  const willOpen = !filterPopoverVisible[field];
+  // 打开时关闭其他列已打开的筛选弹窗
+  if (willOpen) {
+    Object.keys(filterPopoverVisible).forEach((key) => {
+      if (key !== field) {
+        filterPopoverVisible[key] = false;
+      }
+    });
+  }
+  filterPopoverVisible[field] = willOpen;
+
+  // 首次打开时初始化选项
+  if (willOpen && !columnFilterOptions[field]) {
+    // 字典列(下拉框/单选等)直接使用绑定的数据源作为选项，无需从后端加载去重值
+    if (column.bind && Array.isArray(column.bind.data) && column.bind.data.length) {
+      columnFilterOptions[field] = column.bind.data
+        .filter((x) => !x.hidden)
+        .map((x) => ({
+          label: x.value === undefined || x.value === null ? String(x.key) : String(x.value),
+          value: x.key
+        }));
+      if (!columnFilterCheckboxValues[field]) {
+        columnFilterCheckboxValues[field] = [];
+      }
+      hasMoreFilterOptions[field] = false;
+      return;
+    }
+    columnFilterOptions[field] = [];
+    hasMoreFilterOptions[field] = true;
+    loadMoreFilterOptions(column);
+  }
+};
+
+// 点击筛选弹窗与筛选图标以外的区域时关闭弹窗
+const closeFilterPopoverOnOutsideClick = (event) => {
+  const hasOpen = Object.keys(filterPopoverVisible).some((key) => filterPopoverVisible[key]);
+  if (!hasOpen) return;
+  const target = event.target;
+  if (
+    target &&
+    target.closest &&
+    (target.closest('.column-filter-popper') || target.closest('.column-filter-icon'))
+  ) {
+    return;
+  }
+  Object.keys(filterPopoverVisible).forEach((key) => {
+    filterPopoverVisible[key] = false;
+  });
+};
+onMounted(() => {
+  document.addEventListener('click', closeFilterPopoverOnOutsideClick, true);
+});
+onUnmounted(() => {
+  document.removeEventListener('click', closeFilterPopoverOnOutsideClick, true);
+});
+
+// 选项列表滚动到底部时自动加载下一批(字典列数据全在本地，无需加载)
+const onFilterOptionsScroll = (event, column) => {
+  const field = column.field;
+  if (column.bind || !hasMoreFilterOptions[field] || columnFilterLoading[field]) {
+    return;
+  }
+  const el = event.target;
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 30) {
+    loadMoreFilterOptions(column);
+  }
+};
+
+// 弹窗中显示的选项：字典列输入框做客户端过滤，其他列显示全部
+const getVisibleFilterOptions = (column) => {
+  const options = columnFilterOptions[column.field] || [];
+  if (column.bind) {
+    const keyword = String(columnFilterInputs[column.field] || '').trim().toLowerCase();
+    if (keyword) {
+      return options.filter(
+        (x) =>
+          String(x.label).toLowerCase().includes(keyword) ||
+          String(x.value).toLowerCase().includes(keyword)
+      );
+    }
+  }
+  return options;
+};
+
+const applyColumnFilter = (column) => {
+  const field = column.field;
+  // 字典列输入框只做选项过滤，日期列无输入框：两者仅按勾选值in查询
+  const isDict = !!column.bind;
+  const isDate = column.type === 'date' || column.type === 'datetime';
+  const inputValue = String(columnFilterInputs[field] || '').trim();
+  const checkboxValues = columnFilterCheckboxValues[field] || [];
+
+  // 确保 Filter 是数组
+  if (!Array.isArray(paginations.Filter)) {
+    paginations.Filter = [];
+  }
+
+  // 移除该字段的旧筛选条件
+  paginations.Filter = paginations.Filter.filter(w => w.Name !== field);
+
+  // 普通列：合并输入框和多选框的值
+  const useInput = !isDict && !isDate && inputValue;
+  const allValues = [];
+  if (useInput) {
+    allValues.push(inputValue);
+  }
+  if (checkboxValues.length > 0) {
+    allValues.push(...checkboxValues);
+  }
+
+  if (allValues.length > 0) {
+    columnFilterValues[field] = allValues;
+    // 仅输入框有值时模糊匹配，否则in精确匹配(日期列后端按天区间匹配)
+    if (useInput && checkboxValues.length === 0) {
+      paginations.Filter.push({
+        Name: field,
+        Value: inputValue,
+        DisplayType: 'like'
+      });
+    } else {
+      paginations.Filter.push({
+        Name: field,
+        Value: allValues.join(','),
+        // 值本身带逗号时(如地区名"北京市,新疆")Value会被后端拆坏，同时传数组由后端优先取用
+        Values: allValues.map((v) => (v === null || v === undefined ? '' : String(v))),
+        DisplayType: 'in'
+      });
+    }
+  } else {
+    delete columnFilterValues[field];
+  }
+
+  filterPopoverVisible[field] = false;
+  // 重新加载数据
+  load();
+};
+
+const clearColumnFilter = (column) => {
+  columnFilterInputs[column.field] = '';
+  columnFilterCheckboxValues[column.field] = [];
+  delete columnFilterValues[column.field];
+  // 确保 Filter 是数组
+  if (!Array.isArray(paginations.Filter)) {
+    paginations.Filter = [];
+  }
+  // 移除查询条件
+  const whereIndex = paginations.Filter.findIndex(w => w.Name === column.field);
+  if (whereIndex >= 0) {
+    paginations.Filter.splice(whereIndex, 1);
+  }
+  filterPopoverVisible[column.field] = false;
+  // 重新加载数据
+  load();
+};
+
+// 一键清除所有表头筛选条件，返回清除的列数(工具栏"清除筛选"按钮调用)
+const clearAllColumnFilters = () => {
+  const count = Object.keys(columnFilterValues).filter((key) => columnFilterValues[key]?.length > 0).length;
+  Object.keys(filterPopoverVisible).forEach((key) => {
+    filterPopoverVisible[key] = false;
+  });
+  Object.keys(columnFilterInputs).forEach((key) => {
+    columnFilterInputs[key] = '';
+  });
+  Object.keys(columnFilterCheckboxValues).forEach((key) => {
+    columnFilterCheckboxValues[key] = [];
+  });
+  Object.keys(columnFilterValues).forEach((key) => {
+    delete columnFilterValues[key];
+  });
+  const hasFilter = Array.isArray(paginations.Filter) && paginations.Filter.length > 0;
+  paginations.Filter = [];
+  if (hasFilter) {
+    load();
+  }
+  return count;
+};
+
+// 加载更多筛选选项
+const loadMoreFilterOptions = async (column) => {
+  const field = column.field;
+  // 初始化
+  if (!columnFilterOptions[field]) {
+    columnFilterOptions[field] = [];
+  }
+  if (!columnFilterCheckboxValues[field]) {
+    columnFilterCheckboxValues[field] = [];
+  }
+
+  columnFilterLoading[field] = true;
+
+  try {
+    // 初始化页码
+    if (!columnFilterPageIndexes[field]) {
+      columnFilterPageIndexes[field] = 1;
+      columnFilterOptions[field] = [];
+    }
+
+    // 表头筛选为框架级接口，所有表的查询地址getPageData替换为getColumnDistinctValues
+    let url = props.url;
+    if (!url || !url.includes('getPageData')) {
+      hasMoreFilterOptions[field] = false;
+      proxy.$message.error('当前页面查询地址不支持表头筛选');
+      return;
+    }
+    url = url.replace(/getPageData(Async)?/, 'getColumnDistinctValues');
+
+    const response = await proxy.http.post(url, {
+      ColumnName: field,
+      Page: columnFilterPageIndexes[field],
+      PageSize: 30
+    });
+
+    if (response.status) {
+      const newOptions = (response.rows || [])
+        .map(item => {
+          // 兼容返回原始值或{字段:值}对象两种格式
+          const value = item !== null && typeof item === 'object' ? item[field] : item;
+          // 过滤掉 null、undefined、空字符串
+          if (value === null || value === undefined || value === '') {
+            return null;
+          }
+          return {
+            label: getFilterOptionLabel(column, value),
+            value: value
+          };
+        })
+        .filter(option => option !== null); // 过滤掉空值
+
+      // 追加到已有选项
+      columnFilterOptions[field].push(...newOptions);
+
+      // 更新页码
+      columnFilterPageIndexes[field]++;
+
+      // 判断是否还有更多
+      hasMoreFilterOptions[field] = columnFilterOptions[field].length < response.total;
+    } else {
+      proxy.$message.error(response.message || '加载失败');
+    }
+
+  } catch (error) {
+    proxy.$message.error('加载筛选选项失败: ' + (error.message || error));
+  } finally {
+    columnFilterLoading[field] = false;
+  }
+};
+
+// 筛选选项显示文本：数据字典转换、日期格式化
+const getFilterOptionLabel = (column, value) => {
+  if (column.bind && Array.isArray(column.bind.data) && column.bind.data.length) {
+    const item = column.bind.data.find((x) => x.key == value);
+    if (item && item.value !== undefined && item.value !== null) {
+      return String(item.value);
+    }
+  }
+  let label = String(value);
+  if ((column.type === 'date' || column.type === 'datetime') && label.includes('T')) {
+    label = column.type === 'date' ? label.substring(0, 10) : label.substring(0, 19).replace('T', ' ');
+  }
+  return label;
+};
+
 
 const tableV2SummaryHeight = computed(() => {
   return props.columns.some((x) => {
@@ -1461,9 +1854,154 @@ defineExpose({
   viewImg,
   tableData: props.tableData,
   validate,
-  focus
+  focus,
+  clearAllColumnFilters
 });
 </script>
 <style lang="less" scoped>
 @import "./VolTable/VolTable.less";
 </style>
+<style lang="less">
+// 表头筛选：弹窗teleport到body，需使用全局样式；颜色使用element变量以适配暗色主题
+.column-filter-icon {
+  cursor: pointer;
+  outline: none;
+  color: var(--el-text-color-placeholder);
+  transition: color 0.2s;
+
+  &:hover,
+  &.is-active {
+    color: var(--el-color-primary);
+  }
+}
+
+.el-popover.el-popper.column-filter-popper {
+  padding: 0;
+  border-radius: 8px;
+}
+
+.column-filter-popover {
+  .filter-input-wrapper {
+    padding: 10px 10px 6px;
+
+    .el-input__wrapper {
+      background: var(--el-fill-color-light);
+      border-radius: 6px;
+      box-shadow: none;
+      transition: background 0.2s, box-shadow 0.2s;
+
+      &:hover {
+        box-shadow: none;
+      }
+
+      &.is-focus {
+        background: var(--el-bg-color);
+        box-shadow: 0 0 0 1px var(--el-color-primary) inset;
+      }
+    }
+  }
+
+  .filter-checkbox-wrapper {
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 2px 6px 6px;
+
+    // 日期列无输入框时顶部留白
+    &:first-child {
+      padding-top: 8px;
+    }
+
+    &::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: var(--el-border-color-lighter);
+      border-radius: 3px;
+
+      &:hover {
+        background: var(--el-border-color);
+      }
+    }
+
+    .filter-checkbox-item {
+      border-radius: 6px;
+      transition: background 0.15s;
+
+      &:hover {
+        background: var(--el-fill-color-light);
+      }
+
+      .el-checkbox {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        height: 30px;
+        padding: 0 8px;
+        margin-right: 0;
+
+        .el-checkbox__label {
+          flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          font-size: 13px;
+          color: var(--el-text-color-regular);
+        }
+
+        &.is-checked .el-checkbox__label {
+          color: var(--el-color-primary);
+        }
+      }
+    }
+  }
+
+  .filter-loading,
+  .filter-list-end {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 0 4px;
+    font-size: 12px;
+    color: var(--el-text-color-placeholder);
+  }
+
+  .filter-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 26px 0;
+    color: var(--el-text-color-placeholder);
+    font-size: 12px;
+
+    .el-icon {
+      font-size: 24px;
+    }
+
+    > div {
+      margin-top: 6px;
+    }
+  }
+
+  .filter-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 8px 10px;
+    border-top: 1px solid var(--el-border-color-extra-light);
+
+    .filter-selected {
+      margin-right: auto;
+      font-size: 12px;
+      color: var(--el-text-color-secondary);
+    }
+
+    .el-button + .el-button {
+      margin-left: 8px;
+    }
+  }
+}
+</style>
+

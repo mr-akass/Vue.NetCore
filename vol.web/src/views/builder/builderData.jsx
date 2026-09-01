@@ -235,6 +235,43 @@ export const tableOptions = () => {
               );
             },
           },
+        ],
+        [
+          {
+            title: "数据库",
+            field: "dbServer",
+            type: "select",
+            data: [],
+            placeholder: "表所在数据库(默认库可不选)",
+            labelRender: (h, { }) => {
+              return (
+                <div>
+                  <el-tooltip placement="top-start" title="" trigger="hover">
+                    {{
+                      default: () => {
+                        return (
+                          <span>
+                            数据库
+                            <i
+                              style="font-size:12px;margin-left:3px;color:#0076d4"
+                              class="el-icon-warning-outline"
+                            ></i>
+                          </span>
+                        );
+                      },
+                      content: () => {
+                        return (
+                          <div>
+                            表所在数据库；选项来自[系统管理→数据库管理]中启用的连接(也兼容appsettings.json的Connections节点)；不选=默认数据库
+                          </div>
+                        );
+                      },
+                    }}
+                  </el-tooltip>
+                </div>
+              );
+            },
+          },
         ]
       ],
       options: [
@@ -286,6 +323,29 @@ export const tableOptions = () => {
             field: "folderName",
             required: true,
             v3: true
+          },
+          {
+            title: "数据库",
+            field: "dbServer",
+            type: "select",
+            data: [],
+            placeholder: "表所在数据库(默认库可不选)",
+            labelRender: (h, { }) => {
+              return (
+                <el-tooltip effect="dark" placement="top-start">
+                  {{
+                    default: () => {
+                      return (
+                        <span class="el-icon-warning-outline" style={{ color: '#0247de', fontSize: 13, 'margin-top': '3px', 'margin-bottom': '5px' }}>
+                          <span style={{ marginLeft: '3px' }}>数据库</span>
+                        </span>
+                      );
+                    },
+                    content: () => { return (<div style="font-size:12px">表所在数据库；选项来自[系统管理→数据库管理]中启用的连接(也兼容appsettings.json的Connections节点)；不选=默认数据库</div>); },
+                  }}
+                </el-tooltip>
+              )
+            },
           }
         ],
         [
@@ -381,6 +441,40 @@ export const tableOptions = () => {
           },
 
 
+          {
+            title: "编辑模式",
+            field: "editType",
+            type: "select",
+            data: [
+              { key: 0, value: "弹出框编辑" },
+              { key: 1, value: "新页面编辑" },
+              { key: 2, value: "表格行内编辑" },
+            ],
+            placeholder: "默认弹出框编辑",
+            v3: true,
+            labelRender: (h, { }) => {
+              return (
+                <el-tooltip effect="dark" placement="top-start">
+                  {{
+                    default: () => {
+                      return (
+                        <span class="el-icon-warning-outline" style={{ color: '#0247de', fontSize: 13, 'margin-top': '3px', 'margin-bottom': '5px' }}>
+                          <span style={{ marginLeft: '3px' }}>编辑模式</span>
+                        </span>
+                      );
+                    },
+                    content: () => {
+                      return (<div style="font-size:12px">
+                        <div>1、弹出框编辑：以弹出框形式新建或修改(默认)</div>
+                        <div>2、新页面编辑：打开新的tab页面新建或修改</div>
+                        <div>3、表格行内编辑：在查询页面表格中直接编辑，新建/编辑/保存均在行内完成(编辑行&gt;0的字段可编辑)</div>
+                      </div>);
+                    },
+                  }}
+                </el-tooltip>
+              )
+            },
+          },
           {
             title: "快捷查询",
             field: "quickQueryFields",
@@ -765,6 +859,17 @@ export const tableOptions = () => {
         align: "center",
         renderHeader: renderColumnHeaderTip("表头筛选", "字段在表头上开启筛选功能"),
         render: renderBoolCheckboxCell("headerFilter"),
+      },
+      {
+        field: "quickCopy",
+        title: "快捷复制",
+        width: 90,
+        align: "center",
+        renderHeader: renderColumnHeaderTip(
+          "快捷复制",
+          "表格中字段值后面显示复制图标，点击把值复制到粘贴板"
+        ),
+        render: renderBoolCheckboxCell("quickCopy"),
       },
       {
         field: "summaryType",

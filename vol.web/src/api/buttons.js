@@ -47,6 +47,16 @@ let buttons = [
     }
   },
   {
+    name: '复制',
+    icon: 'el-icon-document-copy',
+    class: '',
+    plain:true,
+    value: 'CopyData',
+    onClick: function() {
+      this.copyData();
+    }
+  },
+  {
     name: '审核',
     icon: 'el-icon-check',
     class: '',

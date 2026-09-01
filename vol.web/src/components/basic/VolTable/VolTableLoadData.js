@@ -27,6 +27,7 @@ export const loadData = async (
     sort: paginations.sort,
     order: paginations.order,
     wheres: [], // 查询条件，格式为[{ name: "字段", value: "xx" }]
+    Filter: paginations.Filter || [] // 筛选条件
   };
   let status = true;
   // 合并查询信息(包查询分页、排序、查询条件等)
@@ -61,6 +62,7 @@ export const loadData = async (
   if (param.wheres && Array.isArray(param.wheres)) {
     param.wheres = JSON.stringify(param.wheres);
   }
+  // Filter(表头筛选条件)不转json，直接以数组发送
   if (typeof(param.sort)=='object') {
       try {
         param.sort=JSON.stringify(param.sort)

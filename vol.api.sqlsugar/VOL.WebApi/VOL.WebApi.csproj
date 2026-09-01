@@ -32,5 +32,11 @@
 		<Folder Include="Download\" />
 	</ItemGroup>
 
+	<ItemGroup>
+		<Content Update="Config\Log\nlog.config">
+			<CopyToOutputDirectory>Always</CopyToOutputDirectory>
+			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+		</Content>
+	</ItemGroup>
 
 </Project>

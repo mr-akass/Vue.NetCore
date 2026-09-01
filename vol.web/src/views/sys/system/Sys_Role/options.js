@@ -14,10 +14,11 @@ export default function(){
     const tableCNName = table.cnName;
     const newTabEdit = false;
     const key = table.key;
-    const editFormFields = {"ParentId":[],"RoleName":"","Enable":"","Creator":"","CreateDate":""};
+    const editFormFields = {"ParentId":[],"RoleName":"","Enable":"","AppID":"","Creator":"","CreateDate":""};
     const editFormOptions = [[{"dataKey":"tree_roles","data":[],"title":"父级ID","required":true,"field":"ParentId","type":"cascader"}],
                               [{"title":"角色名称","field":"RoleName"}],
                               [{"dataKey":"enable","data":[],"title":"是否启用","field":"Enable","type":"switch"}],
+                              [{"dataKey":"application","data":[],"title":"所属应用","field":"AppID","type":"select","placeholder":"角色所属子系统(用户通过多角色获得多个应用入口)"}],
                               [{"title":"创建人","field":"Creator","disabled":true}],
                               [{"title":"创建时间","field":"CreateDate","disabled":true,"type":"datetime"}]];
     const searchFormFields = {"RoleName":"","DeptName":"","Enable":"","CreateDate":"","ModifyDate":""};
@@ -28,6 +29,7 @@ export default function(){
                        {field:'Dept_Id',title:'部门ID',type:'int',width:90,hidden:true,align:'left'},
                        {field:'DeptName',title:'部门名称',type:'string',width:90,hidden:true,align:'left'},
                        {field:'Enable',title:'是否启用',type:'byte',bind:{ key:'enable',data:[]},width:90,align:'left'},
+                       {field:'AppID',title:'所属应用',type:'int',bind:{ key:'application',data:[]},width:100,align:'left'},
                        {field:'OrderNo',title:'排序',type:'int',width:90,hidden:true,align:'left'},
                        {field:'Creator',title:'创建人',type:'string',width:130,readonly:true,align:'left'},
                        {field:'CreateDate',title:'创建时间',type:'datetime',width:90,readonly:true,align:'left'},

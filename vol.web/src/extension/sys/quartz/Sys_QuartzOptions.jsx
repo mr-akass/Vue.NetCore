@@ -7,6 +7,7 @@
  *****************************************************************************************/
 //此js文件是用来自定义扩展业务代码，可以扩展一些自定义页面或者重新配置生成的代码
 import gridBody from './Sys_QuartzOptionsGridBody';
+import cronBuilder from './CronBuilderDialog.vue';
 let extension = {
   components: {
     //查询界面扩展组件
@@ -15,7 +16,7 @@ let extension = {
     gridFooter: '',
     //新建、编辑弹出框扩展组件
     modelHeader: '',
-    modelBody: '',
+    modelBody: cronBuilder, //设置频率(生成cron表达式)弹窗
     modelFooter: ''
   },
   tableAction: '', //指定某张表的权限(这里填写表名,默认不用填写)
@@ -109,11 +110,22 @@ let extension = {
       this.editFormOptions.forEach((options) => {
         options.forEach((option) => {
           if (option.field == 'CronExpression') {
+            //点击[设置频率]弹窗按选择的时间段生成cron表达式
+            option.placeholder = '点击右侧[设置频率]生成，也可手动输入';
             option.extra = {
-              style: 'color: #0e84ff;cursor: pointer;',
-              text: '查看',
+              style: 'color: #2196F3;cursor: pointer;font-size:13px;',
+              text: '设置频率',
               click: () => {
-                window.open('https://cron.qqe2.com/', '_blank');
+                const currentCron = this.editFormFields.CronExpression;
+                this.$refs.modelBody.open(currentCron, (cronExpr, cronDescr) => {
+                  //回填表单cron字段，extra文字换成中文描述
+                  this.editFormFields.CronExpression = cronExpr;
+                  option.extra = {
+                    text: cronDescr || '设置频率',
+                    style: 'color: #2196F3;cursor: pointer;font-size:13px;',
+                    click: option.extra.click
+                  };
+                });
               }
             };
           }else if(option.field=='PostData'){
@@ -154,6 +166,28 @@ let extension = {
           }
         });
       });
+      //编辑时[设置频率]链接显示当前任务的频率中文描述，新建时恢复默认文字
+      const cronOpt = this.getFormOption('CronExpression');
+      const clickFn = cronOpt && cronOpt.extra ? cronOpt.extra.click : null;
+      if (clickFn) {
+        const descr = this.currentAction != 'Add' && row ? row.CronDescr : '';
+        cronOpt.extra = {
+          text: descr || '设置频率',
+          style: 'color: #2196F3;cursor: pointer;font-size:13px;',
+          click: clickFn
+        };
+      }
+    },
+    getFormOption(field) {
+      let option;
+      this.editFormOptions.forEach((x) => {
+        x.forEach((item) => {
+          if (item.field == field) {
+            option = item;
+          }
+        });
+      });
+      return option;
     }
   }
 };

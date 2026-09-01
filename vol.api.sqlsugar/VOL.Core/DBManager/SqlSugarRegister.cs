@@ -6,6 +6,8 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using VOL.Core.Configuration;
+using VOL.Core.DBManage;
+using VOL.Core.DBManager;
 using VOL.Core.DbSqlSugar;
 
 namespace VOL.Core.DBManager
@@ -35,30 +37,43 @@ namespace VOL.Core.DBManager
             };
         }
 
+        /// <summary>
+        /// 获取所有数据库连接配置：默认连接(Connection节点) + 命名连接(Connections节点)
+        /// 命名连接的ConfigId即为配置节点名称，字典/代码生成器通过DBServer字段按此名称切换数据库
+        /// </summary>
+        /// <returns></returns>
+        public static List<ConnectionConfig> GetAllConnectionConfigs()
+        {
+            var configs = new List<ConnectionConfig>() { GetSysConnectionConfig() };
+            foreach (var conn in AppSetting.Connections)
+            {
+                var dbType = SqlSugarDbType.GetType(conn.DBType);
+                configs.Add(new ConnectionConfig()
+                {
+                    DbType = dbType,
+                    ConnectionString = conn.DbConnectionString,
+                    IsAutoCloseConnection = true,
+                    ConfigId = conn.Name,
+                    MoreSettings = new ConnMoreSettings()
+                    {
+                        PgSqlIsAutoToLower = false,
+                        IsAutoToUpper = IsAutoToUpper(dbType)
+                    },
+                    ConfigureExternalServices = GetConfigureExternalServices(dbType),
+                });
+            }
+            return configs;
+        }
+
 
         public static IServiceCollection UseSqlSugar(this IServiceCollection services)
         {
             services.AddHttpContextAccessor();
-            var dbType = DbManger.GetDbType();
-            //缓存所有配置文件的中的数据库链接
-            var configs = new List<ConnectionConfig>() { };
-
             services.AddSingleton<ISqlSugarClient>(s =>
             {
+                //注册默认连接与appsettings中Connections节点下的所有命名连接
                 SqlSugarScope sqlSugar = new SqlSugarScope(
-                 GetSysConnectionConfig(),
-               //这里自定义数据库链接
-               //new List<ConnectionConfig>()
-               //{
-               //   sysConfig,
-               //    new ConnectionConfig(){
-               //    DbType = dbType,// SqlSugar.DbType.SqlServer,
-               //    ConnectionString = DBServerProvider.SysConnectingString,
-               //    IsAutoCloseConnection = true,
-               //    ConfigId ="名字"// typeof(SysDbContext).Name,
-               //  },
-
-               //},
+                 GetAllConnectionConfigs(),
                db =>
                {
                    //单例参数配置，所有上下文生效
@@ -95,8 +110,10 @@ namespace VOL.Core.DBManager
                     {
                         column.DbColumnName = property.Name.ToUpper();
                         //这里限制的Oralce数据库，DM数据库也会执行？
+                        //按框架表名单判断而不是 Sys_ 前缀：业务表也可以叫 Sys_xxx(代码生成器生成到同一个程序集),
+                        //给它按框架表规则指定一个不存在的序列会让插入直接失败
                         if (dbType == DbType.Oracle && column.PropertyInfo.PropertyType == typeof(int)
-                           && property.DeclaringType.Name.StartsWith("Sys_"))
+                           && EntityDbRouter.IsFrameworkTableName(property.DeclaringType.Name))
                         {
                             //oralce系统表设置自增
                             if (column.PropertyInfo.GetCustomAttribute<KeyAttribute>() != null)

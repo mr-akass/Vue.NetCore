@@ -72,6 +72,14 @@ namespace VOL.Entity.DomainModels
        public byte? Enable { get; set; }
 
        /// <summary>
+       ///所属应用(Sys_Application.AppID，0=未指定；用户通过多角色拥有多个应用入口)
+       /// </summary>
+       [Display(Name ="所属应用")]
+       [Column(TypeName="int")]
+       [Editable(true)]
+       public int AppID { get; set; }
+
+       /// <summary>
        ///排序
        /// </summary>
        [Display(Name ="排序")]

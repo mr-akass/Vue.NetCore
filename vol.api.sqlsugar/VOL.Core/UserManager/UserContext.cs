@@ -63,11 +63,11 @@ namespace VOL.Core.ManageUser
         private UserInfo _userInfo { get; set; }
 
         /// <summary>
-        /// 角色ID为1的默认为超级管理员
+        /// 角色ID为1的默认为超级管理员(多角色时任一角色为超级管理员即是)
         /// </summary>
         public bool IsSuperAdmin
         {
-            get { return IsRoleIdSuperAdmin(this.RoleId); }
+            get { return RoleIds.Any(x => IsRoleIdSuperAdmin(x)); }
         }
         /// <summary>
         /// 角色ID为1的默认为超级管理员
@@ -115,6 +115,15 @@ namespace VOL.Core.ManageUser
 
             if (_userInfo != null && _userInfo.User_Id > 0)
             {
+                //加载用户全部角色(多角色)：Sys_UserRole中启用的角色 ∪ 主角色Role_Id
+                var roleIds = DBServerProvider.DbContext.Set<Sys_UserRole>()
+                    .Where(x => x.UserId == userId && x.Enable == 1)
+                    .Select(s => s.RoleId).ToList();
+                if (_userInfo.Role_Id > 0 && !roleIds.Contains(_userInfo.Role_Id))
+                {
+                    roleIds.Insert(0, _userInfo.Role_Id);
+                }
+                _userInfo.RoleIds = roleIds.Distinct().ToArray();
                 CacheService.AddObject(key, _userInfo);
             }
             return _userInfo ?? new UserInfo();
@@ -139,14 +148,14 @@ namespace VOL.Core.ManageUser
 
 
         /// <summary>
-        /// 获取用户所有的菜单权限
+        /// 获取用户所有的菜单权限(多角色时为所有角色权限的并集)
         /// </summary>
 
         public List<Permissions> Permissions
         {
             get
             {
-                return GetPermissions(RoleId);
+                return GetPermissions(RoleIds);
             }
         }
 
@@ -173,7 +182,7 @@ namespace VOL.Core.ManageUser
         /// <returns></returns>
         public Permissions GetPermissions(string tableName)
         {
-            return GetPermissions(RoleId).Where(x => x.TableName == tableName).FirstOrDefault();
+            return GetPermissions(RoleIds).Where(x => x.TableName == tableName).FirstOrDefault();
         }
         /// <summary>
         /// 2022.03.26
@@ -194,7 +203,7 @@ namespace VOL.Core.ManageUser
         public Permissions GetPermissions(Func<Permissions, bool> func)
         {
             // 2022.03.26增移动端加菜单类型判断
-            return GetPermissions(RoleId).Where(func).Where(x => x.MenuType == MenuType).FirstOrDefault();
+            return GetPermissions(RoleIds).Where(func).Where(x => x.MenuType == MenuType).FirstOrDefault();
         }
 
         private List<Permissions> ActionToArray(List<Permissions> permissions)
@@ -241,6 +250,42 @@ namespace VOL.Core.ManageUser
             });
             return permissions;
         }
+        /// <summary>
+        /// 获取多个角色的权限并集(多角色支持)：按菜单去重，按钮权限取所有角色的并集
+        /// </summary>
+        /// <param name="roleIds"></param>
+        /// <returns></returns>
+        public List<Permissions> GetPermissions(int[] roleIds)
+        {
+            if (roleIds == null || roleIds.Length == 0)
+            {
+                roleIds = new int[] { RoleId };
+            }
+            roleIds = roleIds.Distinct().ToArray();
+            //任一角色为超级管理员，直接返回超级管理员的全部权限
+            if (roleIds.Any(x => IsRoleIdSuperAdmin(x)))
+            {
+                return GetPermissions(roleIds.First(x => IsRoleIdSuperAdmin(x)));
+            }
+            if (roleIds.Length == 1)
+            {
+                return GetPermissions(roleIds[0]);
+            }
+            //每个角色的权限走原有的单角色缓存，再合并
+            return roleIds.SelectMany(roleId => GetPermissions(roleId))
+                .GroupBy(g => g.Menu_Id)
+                .Select(s => new Permissions()
+                {
+                    Menu_Id = s.Key,
+                    ParentId = s.First().ParentId,
+                    TableName = s.First().TableName,
+                    MenuAuth = s.First().MenuAuth,
+                    UserAuth = s.First().UserAuth,
+                    MenuType = s.First().MenuType,
+                    UserAuthArr = s.SelectMany(x => x.UserAuthArr ?? new string[0]).Distinct().ToArray()
+                }).ToList();
+        }
+
         public List<Permissions> GetPermissions(int roleId)
         {
             if (IsRoleIdSuperAdmin(roleId))
@@ -320,7 +365,7 @@ namespace VOL.Core.ManageUser
         }
 
         /// <summary>
-        /// 判断是否有权限
+        /// 判断是否有权限(roleId不传时按用户全部角色的权限并集判断)
         /// </summary>
         /// <param name="tableName"></param>
         /// <param name="authName"></param>
@@ -328,9 +373,9 @@ namespace VOL.Core.ManageUser
         /// <returns></returns>
         public bool ExistsPermissions(string tableName, string authName, int roleId = 0)
         {
-            if (roleId <= 0) roleId = RoleId;
             tableName = tableName.ToLower();
-            return GetPermissions(roleId).Any(x => x.TableName == tableName && x.UserAuthArr.Contains(authName));
+            List<Permissions> permissions = roleId <= 0 ? GetPermissions(RoleIds) : GetPermissions(roleId);
+            return permissions.Any(x => x.TableName == tableName && x.UserAuthArr.Contains(authName));
         }
 
         /// <summary>
@@ -371,6 +416,23 @@ namespace VOL.Core.ManageUser
         public int RoleId
         {
             get { return UserInfo.Role_Id; }
+        }
+
+        /// <summary>
+        /// 用户全部角色ID(多角色)：Sys_UserRole中启用的角色 ∪ 主角色Role_Id
+        /// 旧缓存中没有RoleIds时回退为主角色
+        /// </summary>
+        public int[] RoleIds
+        {
+            get
+            {
+                var roleIds = UserInfo.RoleIds;
+                if (roleIds == null || roleIds.Length == 0)
+                {
+                    return new int[] { RoleId };
+                }
+                return roleIds;
+            }
         }
         public List<Guid> DeptIds
         {

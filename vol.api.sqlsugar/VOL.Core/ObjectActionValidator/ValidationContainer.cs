@@ -24,8 +24,8 @@ namespace VOL.Core.ObjectActionValidator
         /// <returns></returns>
         public static IServiceCollection UseMethodsModelParameters(this IServiceCollection services)
         {
-            //登陆方法校验参数,只验证密码与用户名
-            ValidatorModel.Login.Add<LoginInfo>(x => new { x.Password, x.UserName,x.VerificationCode,x.UUID });
+            //登陆方法校验参数,只验证密码与用户名(2026.08.04登录页去掉验证码，不再校验VerificationCode/UUID)
+            ValidatorModel.Login.Add<LoginInfo>(x => new { x.Password, x.UserName });
 
             //只验证LoginInfo的密码字段必填
             ValidatorModel.LoginOnlyPassWord.Add<LoginInfo>(x => new { x.Password });

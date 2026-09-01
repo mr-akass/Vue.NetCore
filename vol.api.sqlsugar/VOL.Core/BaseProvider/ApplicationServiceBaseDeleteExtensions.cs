@@ -162,7 +162,7 @@ namespace VOL.Core.BaseProvider
         {
             var expression = CreateExpression<TEntity, TKey>(keyName, keys);
             if (expression == null) return 0;
-            return dbContext.SqlSugarClient.Deleteable<TEntity>().Where(expression).ExecuteCommand();
+            return dbContext.GetClient<TEntity>().Deleteable<TEntity>().Where(expression).ExecuteCommand();
             //  return dbContext.Set<TEntity>().Where(expression).ExecuteDelete();
         }
 
@@ -171,7 +171,7 @@ namespace VOL.Core.BaseProvider
         {
             var expression = CreateExpression<TEntity, TKey>(keyName, keys);
             if (expression == null) return 0;
-            return await dbContext.SqlSugarClient.Deleteable<TEntity>().Where(expression).ExecuteCommandAsync();
+            return await dbContext.GetClient<TEntity>().Deleteable<TEntity>().Where(expression).ExecuteCommandAsync();
             //return await dbContext.Set<TEntity>().Where(expression).ExecuteDeleteAsync();
         }
         private static Expression<Func<TEntity, bool>> CreateExpression<TEntity, TKey>(string keyName, List<object> keys)
@@ -203,7 +203,7 @@ namespace VOL.Core.BaseProvider
             var value = (LogicFieldType)(((int)DelStatus.已删除).ChangeType(typeof(LogicFieldType)));
 
 
-            dbContext.SqlSugarClient.Updateable<TEntity>()
+            dbContext.GetClient<TEntity>().Updateable<TEntity>()
             .SetColumns(logicDelProperty.Name, value)
             .Where(expression)
             .ExecuteCommand();
@@ -234,7 +234,7 @@ namespace VOL.Core.BaseProvider
             var expression = CreateExpression<TEntity, TKey>(keyName, keys);
             if (expression == null) return 0;
             var value = (LogicFieldType)(((int)DelStatus.已删除).ChangeType(typeof(LogicFieldType)));
-            await dbContext.SqlSugarClient.Updateable<TEntity>()
+            await dbContext.GetClient<TEntity>().Updateable<TEntity>()
          .SetColumns(logicDelProperty.Name, value)
          .Where(expression)
          .ExecuteCommandAsync();
@@ -322,7 +322,7 @@ namespace VOL.Core.BaseProvider
                 .ToList();
             var predicate = whereForeignKeyName.CreateExpression<TQueryEntity>(values, LinqExpressionType.In);
             var selectExp = selectKeyName.GetExpression<TQueryEntity, TSelectKey>();
-            return dbContext.SqlSugarClient.Set<TQueryEntity>()
+            return dbContext.Set<TQueryEntity>()
                 .Where(predicate)
                .Select(selectExp);
         }

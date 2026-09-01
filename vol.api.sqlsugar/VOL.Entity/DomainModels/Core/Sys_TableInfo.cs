@@ -37,6 +37,13 @@ namespace VOL.Entity.DomainModels
         [Editable(true)]
         public string DataTableType { get; set; }
 
+        /// <summary>
+        /// 表所在数据库(appsettings.json中Connections节点的连接名/ConfigId)，为空使用默认库
+        /// </summary>
+        [Editable(true)]
+        [MaxLength(100)]
+        public string DBServer { get; set; }
+
         [Editable(true)]
         public string EditorType { get; set; }
         [Editable(true)]
@@ -107,6 +114,13 @@ namespace VOL.Entity.DomainModels
         /// </summary>
         [Editable(true)]
         public int? ShowDetail { get; set; }
+
+        /// <summary>
+        /// 编辑模式：0/null=弹出框编辑，1=新页面编辑，2=表格行内编辑
+        /// </summary>
+        [Editable(true)]
+        [Column(TypeName = "int")]
+        public int? EditType { get; set; }
 
         [ForeignKey("Table_Id")]
         [Navigate(NavigateType.OneToMany, nameof(Table_Id), nameof(Table_Id))]

@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 using VOL.Core.BaseProvider;
 using VOL.Core.Const;
 using VOL.Core.DBManager;
+using VOL.Core.DBManage;
+using VOL.Core.DbSqlSugar;
 using VOL.Core.Enums;
 using VOL.Core.Extensions;
 using VOL.Core.Infrastructure;
@@ -33,6 +35,20 @@ namespace VOL.Sys.Services
             get { return DictionaryManager.Dictionaries; }
         }
 
+        /// <summary>
+        /// 根据字典配置的DBServer(Connections节点中的连接名)获取对应数据库连接，为空使用默认库
+        /// </summary>
+        /// <param name="dbServer"></param>
+        /// <returns></returns>
+        private ISqlSugarClient GetSqlSugarClient(string dbServer)
+        {
+            if (string.IsNullOrWhiteSpace(dbServer))
+            {
+                return repository.SqlSugarClient;
+            }
+            return DbManger.GetDbClient(dbServer);
+        }
+
         public object GetVueDictionary(string[] dicNos)
         {
             if (dicNos == null || dicNos.Count() == 0) return new string[] { };
@@ -41,11 +57,12 @@ namespace VOL.Sys.Services
                 dicNo = s.DicNo,
                 config = s.Config,
                 dbSql = s.DbSql,
+                dbServer = s.DBServer,
                 list = s.Sys_DictionaryList.OrderByDescending(o => o.OrderNo)
                         .Select(list => new { key = list.DicValue, value = list.DicName, color = list.Color })
             }).ToList();
 
-            object GetSourceData(string dicNo, string dbSql, object data)
+            object GetSourceData(string dicNo, string dbSql, object data, string dbServer)
             {
                 //  2020.05.01增加根据用户信息加载字典数据源sql
                 dbSql = DictionaryHandler.GetCustomDBSql(dicNo, dbSql);
@@ -53,13 +70,14 @@ namespace VOL.Sys.Services
                 {
                     return data;
                 }
-                return repository.SqlSugarClient.QueryList<object>(dbSql, null);
+                //按字典配置的DBServer切换数据库执行
+                return GetSqlSugarClient(dbServer).QueryList<object>(dbSql, null);
             }
             return dicConfig.Select(item => new
             {
                 item.dicNo,
                 item.config,
-                data = GetSourceData(item.dicNo, item.dbSql, item.list)
+                data = GetSourceData(item.dicNo, item.dbSql, item.list, item.dbServer)
             }).ToList();
         }
 
@@ -77,14 +95,15 @@ namespace VOL.Sys.Services
                 return null;
             }
             //  2020.05.01增加根据用户信息加载字典数据源sql
-            string sql = Dictionaries.Where(x => x.DicNo == dicNo).FirstOrDefault()?.DbSql;
+            var dictionary = Dictionaries.Where(x => x.DicNo == dicNo).FirstOrDefault();
+            string sql = dictionary?.DbSql;
             sql = DictionaryHandler.GetCustomDBSql(dicNo, sql);
             if (string.IsNullOrEmpty(sql))
             {
                 return null;
             }
             sql = $"SELECT * FROM ({sql}) AS t WHERE value LIKE @value";
-            return repository.SqlSugarClient.QueryList<object>(sql, new { value = "%" + value + "%" });
+            return GetSqlSugarClient(dictionary?.DBServer).QueryList<object>(sql, new { value = "%" + value + "%" });
         }
 
         /// <summary>
@@ -117,26 +136,44 @@ namespace VOL.Sys.Services
         /// <returns></returns>
         public object GetTableDictionary(Dictionary<string, object[]> keyData)
         {
-            // 2020.08.06增加pgsql获取数据源
-            if (DBType.Name == DbCurrentType.PgSql.ToString())
-            {
-                return GetPgSqlTableDictionary(keyData);
-            }
             var dicInfo = Dictionaries.Where(x => keyData.ContainsKey(x.DicNo) && !string.IsNullOrEmpty(x.DbSql))
-                .Select(x => new { x.DicNo, x.DbSql })
+                .Select(x => new { x.DicNo, x.DbSql, x.DBServer })
                 .ToList();
             List<object> list = new List<object>();
-            string keySql = DBType.Name == DbCurrentType.MySql.ToString() ? "t.key" : "t.[key]";
             dicInfo.ForEach(x =>
             {
                 if (keyData.TryGetValue(x.DicNo, out object[] data))
                 {
                     //  2020.05.01增加根据用户信息加载字典数据源sql
                     string sql = DictionaryHandler.GetCustomDBSql(x.DicNo, x.DbSql);
-                    sql = $"SELECT * FROM ({sql}) AS t WHERE " +
-                   $"{keySql}" +
-                   $" in @data";
-                    list.Add(new { key = x.DicNo, data = repository.SqlSugarClient.QueryList<object>(sql, new { data }) });
+                    //in条件的写法按字典自己所在库的类型决定：多库后同一次请求里可能既有sqlserver字典
+                    //又有pgsql字典，用全局DBType会把语法套错(pgsql不认[key]、不认in @data)
+                    SqlSugar.DbType dbType = SqlSugarDbType.GetType(x.DBServer);
+                    object parameters;
+                    if (dbType == SqlSugar.DbType.PostgreSQL || dbType == SqlSugar.DbType.Kdbndp || dbType == SqlSugar.DbType.GaussDB)
+                    {
+                        sql = $"SELECT * FROM ({sql}) AS t WHERE t.key=any(@data)";
+                        parameters = new { data = data.Select(s => s.ToString()).ToList() };
+                    }
+                    else
+                    {
+                        //参数必须一个key一个占位符：原来的 in @data 是Dapper的写法，
+                        //SqlSugar不会把数组展开成参数列表，会直接把值拼进sql导致语法错误
+                        var pars = new List<SugarParameter>();
+                        var names = new List<string>();
+                        for (int i = 0; i < data.Length; i++)
+                        {
+                            names.Add("@dicKey" + i);
+                            pars.Add(new SugarParameter("@dicKey" + i, data[i]?.ToString()));
+                        }
+                        //key是sqlserver/mysql的关键字，必须按各自的方式转义
+                        string keySql = dbType == SqlSugar.DbType.SqlServer
+                            ? "t.[key]"
+                            : (dbType == SqlSugar.DbType.MySql ? "t.`key`" : "t.key");
+                        sql = $"SELECT * FROM ({sql}) AS t WHERE {keySql} in ({string.Join(",", names)})";
+                        parameters = pars;
+                    }
+                    list.Add(new { key = x.DicNo, data = GetSqlSugarClient(x.DBServer).QueryList<object>(sql, parameters) });
                 }
             });
             return list;
@@ -144,13 +181,14 @@ namespace VOL.Sys.Services
 
         /// <summary>
         ///  2020.08.06增加pgsql获取数据源
+        ///  (多库后语法分支已合并进GetTableDictionary，这里保留兼容外部调用)
         /// </summary>
         /// <param name="keyData"></param>
         /// <returns></returns>
         public object GetPgSqlTableDictionary(Dictionary<string, object[]> keyData)
         {
             var dicInfo = Dictionaries.Where(x => keyData.ContainsKey(x.DicNo) && !string.IsNullOrEmpty(x.DbSql))
-                .Select(x => new { x.DicNo, x.DbSql })
+                .Select(x => new { x.DicNo, x.DbSql, x.DBServer })
                 .ToList();
             List<object> list = new List<object>();
 
@@ -160,7 +198,7 @@ namespace VOL.Sys.Services
                 {
                     string sql = DictionaryHandler.GetCustomDBSql(x.DicNo, x.DbSql);
                     sql = $"SELECT * FROM ({sql}) AS t WHERE t.key=any(@data)";
-                    list.Add(new { key = x.DicNo, data = repository.SqlSugarClient.QueryList<object>(sql, new { data = data.Select(s => s.ToString()).ToList() }) });
+                    list.Add(new { key = x.DicNo, data = GetSqlSugarClient(x.DBServer).QueryList<object>(sql, new { data = data.Select(s => s.ToString()).ToList() }) });
                 }
             });
             return list;

@@ -57,7 +57,9 @@ export const getButtons = (proxy, props, ctx, dataConfig) => {
       type: buttons[searchIndex].type,
       onClick: async () => {
         if (dataConfig.fixedSearchForm.value) {
-          return resetSearch(proxy, props);
+          resetSearch(proxy, props);
+          //重置查询条件后自动刷新(2026.07.30)
+          return proxy.refresh();
         }
         if (!dataConfig.searchBoxShow.value) {
           if (!(await props.showAdvancedSearchBefore())) {
@@ -87,6 +89,27 @@ export const getButtons = (proxy, props, ctx, dataConfig) => {
   //   dataConfig.fixedSearchForm.value = false;
   // }
   dataConfig.maxBtnLength.value += searchIndex === -1 ? 0 : 1;
+
+  //表头存在筛选列(filterData)时添加清除筛选按钮(2026.07.30)
+  if (props.columns.some((x) => x.filterData)) {
+    const clearFilterButton = {
+      name: "清除筛选",
+      icon: "el-icon-brush",
+      plain: true,
+      value: "clearColumnFilter",
+      onClick: () => {
+        proxy.$refs.table?.clearAllColumnFilters?.();
+      },
+    };
+    //放在查询按钮后面
+    const clearFilterIndex = buttons.findIndex((x) => x.value === "Search");
+    if (clearFilterIndex !== -1) {
+      buttons.splice(clearFilterIndex + 1, 0, clearFilterButton);
+    } else {
+      buttons.push(clearFilterButton);
+    }
+    dataConfig.maxBtnLength.value += 1;
+  }
 };
 
 export const setViewReadonly = (props, dataConfig, b) => {

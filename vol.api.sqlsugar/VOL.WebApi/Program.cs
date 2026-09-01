@@ -31,7 +31,13 @@ using VOL.WebApi.Controllers.Hubs;
 
 
 var builder = WebApplication.CreateBuilder(args);
+//加载CustomConsole使用的NLog配置(控制台输出+按类别落盘日志)
+NLog.LogManager.Configuration = new NLog.Config.XmlLoggingConfiguration(
+    System.IO.Path.Combine(builder.Environment.ContentRootPath, "Config", "Log", "nlog.config"));
 builder.Services.AddModule(builder.Configuration);
+//把数据库管理页(Sys_DbConnection)里配置的连接合并进AppSetting.Connections，
+//必须在UseSqlSugar之前：SqlSugarRegister注册连接时会遍历AppSetting.Connections
+DbConnectionManager.Initialize();
 builder.Services.UseSqlSugar();
 
 
@@ -135,6 +141,14 @@ builder.Services.Configure<FormOptions>(x =>
 });
 
 var app = builder.Build();
+//启动时输出当前环境信息，便于确认加载了哪个环境的配置文件
+System.Console.WriteLine("==================== 环境配置 ====================");
+System.Console.WriteLine($"ASPNETCORE_ENVIRONMENT: {app.Environment.EnvironmentName}");
+System.Console.WriteLine($"RunningEnvironment:     {VOL.Core.Configuration.AppSetting.RunningEnvironment}");
+System.Console.WriteLine($"配置文件: appsettings.json + appsettings.{app.Environment.EnvironmentName}.json");
+System.Console.WriteLine("==================================================");
+VOL.Core.Utilities.CustomConsole.WriteLine(VOL.Core.Enums.NlogLoggerType.Info,
+    $"系统启动 环境:{app.Environment.EnvironmentName}({VOL.Core.Configuration.AppSetting.RunningEnvironment}) 时间:{System.DateTime.Now:yyyy-MM-dd HH:mm:ss}");
 //正式环境如果要关闭swgger,请注释下面三行代码
 app.UseDeveloperExceptionPage();
 app.UseSwagger();
@@ -152,6 +166,9 @@ else
 }
 
 app.UseMiddleware<ExceptionHandlerMiddleWare>();
+//CORS必须在UseStaticFiles之前：语言包wwwroot/lang/{lang}.js等静态文件是前端跨域XHR加载(带Authorization头会先发OPTIONS预检)，
+//否则预检/响应无Access-Control-Allow-Origin头被浏览器拦截，表现为切换语言不生效
+app.UseCors("cors");
 app.UseDefaultFiles();
 app.UseStaticFiles().UseStaticFiles(new StaticFileOptions
 {
@@ -191,7 +208,13 @@ app.UseCors();
 //app.UseHttpsRedirection();
 // 使用路由
 app.UseRouting();
+//端点级CORS(如MapHub的RequireCors)要求UseCors在UseRouting之后
+app.UseCors("cors");
 app.UseAuthorization();
 app.MapControllers();
-app.MapHub<HomePageMessageHub>("/message");
+//SignalR消息推送(appsettings.json→Connection.UseSignalR开关)，前端连接地址见vol.web/src/views/index/MessageConfig.js
+if (AppSetting.UseSignalR)
+{
+    app.MapHub<HomePageMessageHub>("/message").RequireCors("cors");
+}
 app.Run();

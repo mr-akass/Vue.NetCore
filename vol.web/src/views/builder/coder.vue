@@ -97,35 +97,63 @@ const zoom = ref(document.body.clientWidth < 1500 ? 0.9 : 1);
 /** 命名空间下拉仅首次从 GetTableTree 注入，避免重复 push */
 const namespaceBootstrapped = ref(false);
 
+/**
+ * 生成路径改存数据库(Sys_ConfigSetting)：原来存localStorage，换机器/换浏览器要重填，
+ * 复制框架做新项目时还会读到旧项目的路径把代码生成到错误的目录。
+ * 这里只在内存缓存一份，页面初始化时从后端读，保存/生成时写回后端。
+ */
+const cachedPaths = reactive({ vuePath: "", appPath: "" });
+
 watch(
   () => layOutOptins.fields.vuePath,
   (val) => {
-    const s = val == null ? "" : String(val).trim();
-    if (s) {
-      localStorage.setItem("vuePath", s);
-    }
+    cachedPaths.vuePath = val == null ? "" : String(val).trim();
   }
 );
 
 watch(
   () => layOutOptins.fields.appPath,
   (val) => {
-    const s = val == null ? "" : String(val).trim();
-    if (s) {
-      localStorage.setItem("appPath", s);
-    }
+    cachedPaths.appPath = val == null ? "" : String(val).trim();
   }
 );
 
 const getVuePath = (key) => {
-  let vuePath = localStorage.getItem(key);
-  if (!vuePath || vuePath == "null" || vuePath == "undefined") {
-    vuePath = "";
+  const val = key === "appPath" ? cachedPaths.appPath : cachedPaths.vuePath;
+  if (!val || val == "null" || val == "undefined") {
+    return "";
   }
-  return vuePath;
+  return val;
 };
 
-/** LoadTableInfo 等接口常不返回路径，表单应从 localStorage 回填（与 coderV3 nodeClick 一致） */
+/** 从后端读取生成路径并回填表单 */
+const loadBuilderPaths = () => {
+  return proxy.http.post("api/builder/GetBuilderPaths", {}, false).then((res) => {
+    cachedPaths.vuePath = res?.vuePath || "";
+    cachedPaths.appPath = res?.appPath || "";
+    //必须走 layOutOptins.fields(reactive代理)赋值,直接改 builderData.form.fields 原始对象不触发视图更新
+    layOutOptins.fields.vuePath = cachedPaths.vuePath;
+    layOutOptins.fields.appPath = cachedPaths.appPath;
+  });
+};
+
+/** 写回后端(限超级管理员，失败只提示不阻断当前操作) */
+const saveBuilderPaths = () => {
+  return proxy.http
+    .post(
+      "api/builder/SaveBuilderPaths",
+      { vuePath: cachedPaths.vuePath, appPath: cachedPaths.appPath },
+      false
+    )
+    .then((res) => {
+      if (res && res.status === false) {
+        proxy.$message.error(res.message || "生成路径保存失败");
+      }
+    })
+    .catch(() => { });
+};
+
+/** LoadTableInfo 等接口常不返回路径，表单应从缓存回填（与 coderV3 nodeClick 一致） */
 const applyCachedPathsToPayload = (row) => {
   if (!row) return;
   row.vuePath = getVuePath("vuePath");
@@ -577,7 +605,9 @@ const add = () => {
       af.namespace +
       "&foldername=" +
       af.folderName +
-      "&isTreeLoad=false" 
+      "&dbServer=" +
+      (af.dbServer || "") +
+      "&isTreeLoad=false"
     proxy.http.post("/api/builder/LoadTableInfo?" + queryParam, {}, true).then(async (x) => {
       if (!x.status) {
         proxy.$message.error(x.message);
@@ -676,12 +706,12 @@ const ceateVuePage = async (isApp) => {
   }
   let vuePath;
   if (!isApp) {
-    vuePath = localStorage.getItem("vuePath");
+    vuePath = getVuePath("vuePath");
     if (!vuePath) {
       return proxy.$message.error("请先设置Vue项目对应Views的绝对路径,然后再保存!");
     }
   } else {
-    vuePath = localStorage.getItem("appPath");
+    vuePath = getVuePath("appPath");
     if (!vuePath) {
       return proxy.$message.error("请先设置app路径,然后再保存!");
     }
@@ -740,8 +770,8 @@ const checkSortName = () => { };
 
 const save = async () => {
   const vuePath = layOutOptins.fields.vuePath || "";
-  localStorage.setItem("vuePath", vuePath);
-  localStorage.setItem("appPath", layOutOptins.fields.appPath || "");
+  cachedPaths.vuePath = vuePath;
+  cachedPaths.appPath = layOutOptins.fields.appPath || "";
   if (!vuePath.endsWith("\\views") && !vuePath.endsWith("/views")) {
     return proxy.$message.error({
       message: "Vue路径只能填写到前端项目views目录,如E:\\xxx\\web.vite\\scr\\views",
@@ -749,6 +779,8 @@ const save = async () => {
       duration: 2000,
     });
   }
+  //路径落库,换机器/换浏览器不用重填
+  await saveBuilderPaths();
 
   if (
     data.value?.length &&
@@ -858,8 +890,27 @@ onMounted(() => {
     column.bind.data = dictData;
   });
 
-  builderData.form.fields.vuePath = getVuePath("vuePath");
-  builderData.form.fields.appPath = getVuePath("appPath");
+  //加载数据库连接下拉(多数据库支持)：来自字典[dbServer]，数据源是[系统管理→数据库管理]中启用的连接
+  proxy.http.post("/api/Sys_Dictionary/GetVueDictionary", ["dbServer"], false).then((dic) => {
+    const dbServerData = [{ key: "", value: "默认数据库" }];
+    const dicItem = (dic || []).find((x) => x.dicNo == "dbServer");
+    (dicItem?.data || []).forEach((x) => {
+      if (x.key !== "" && x.key !== null) {
+        dbServerData.push({ key: x.key, value: x.value });
+      }
+    });
+    [layOutOptins.options, addOptions].forEach((opts) => {
+      opts.forEach((option) => {
+        option.forEach((item) => {
+          if (item.field === "dbServer") {
+            item.data = dbServerData;
+          }
+        });
+      });
+    });
+  });
+
+  loadBuilderPaths();
   fetchAndApplyTableTree();
 });
 </script>

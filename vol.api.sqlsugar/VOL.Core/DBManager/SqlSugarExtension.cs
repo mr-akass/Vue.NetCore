@@ -21,16 +21,14 @@ namespace VOL.Core.DBManager
 
         public static int Add<T>(this BaseDbContext dbContext, T table, bool saveChange = false) where T : class, new()
         {
-            dbContext.SqlSugarClient.Insertable(table).AddQueue();
-            if (saveChange)
-            {
-                return dbContext.SqlSugarClient.SaveQueues();
-            }
-            return 1;
+            return dbContext.GetClient<T>().Add(table, saveChange);
         }
 
         public static int Add<T>(this ISqlSugarClient sqlSugarClient, T table, bool saveChange = false) where T : class, new()
         {
+            //所有写入入口统一按实体路由：AddQueue排的队和提交队列必须是同一个连接，
+            //否则分库的表会出现"接口成功但数据没进库"
+            sqlSugarClient = EntityDbRouter.Route<T>(sqlSugarClient);
             sqlSugarClient.Insertable(table).AddQueue();
             if (saveChange)
             {
@@ -40,6 +38,7 @@ namespace VOL.Core.DBManager
         }
         public static int AddWithSetIdentity<T>(this ISqlSugarClient sqlSugarClient, T entity, bool saveChange = false) where T : class, new()
         {
+            sqlSugarClient = EntityDbRouter.Route<T>(sqlSugarClient);
             if (typeof(T).GetSugarSplitTable() != null)
             {
                 sqlSugarClient.Insertable(entity).SplitTable().ExecuteCommand();
@@ -52,6 +51,7 @@ namespace VOL.Core.DBManager
         }
         public static async Task<int> AddWithSetIdentityAsync<T>(this ISqlSugarClient sqlSugarClient, T entity, bool saveChange = false) where T : class, new()
         {
+            sqlSugarClient = EntityDbRouter.Route<T>(sqlSugarClient);
             if (typeof(T).GetSugarSplitTable() != null)
             {
                 await sqlSugarClient.Insertable(entity).SplitTable().ExecuteCommandAsync();
@@ -65,40 +65,43 @@ namespace VOL.Core.DBManager
 
         public static async Task<int> AddAsync<T>(this BaseDbContext dbContext, T list, bool saveChange = false) where T : class, new()
         {
-            dbContext.SqlSugarClient.Insertable(list).AddQueue();
+            var client = dbContext.GetClient<T>();
+            client.Insertable(list).AddQueue();
             if (saveChange)
             {
-                return await dbContext.SqlSugarClient.SaveQueuesAsync();
+                return await client.SaveQueuesAsync();
             }
             return 1;
         }
 
         public static int AddRange<T>(this BaseDbContext dbContext, List<T> list, bool saveChange = false) where T : class, new()
         {
+            var client = dbContext.GetClient<T>();
             if (typeof(T).GetSugarSplitTable() != null)
             {
-                dbContext.SqlSugarClient.Insertable(list).SplitTable().ExecuteCommand();
+                client.Insertable(list).SplitTable().ExecuteCommand();
                 return list.Count;
             }
-            dbContext.SqlSugarClient.Insertable(list).AddQueue();
+            client.Insertable(list).AddQueue();
             if (saveChange)
             {
-                return dbContext.SqlSugarClient.SaveQueues();
+                return client.SaveQueues();
             }
             return list.Count;
         }
 
         public static async Task<int> AddRangeAsync<T>(this BaseDbContext dbContext, List<T> list, bool saveChange = false) where T : class, new()
         {
+            var client = dbContext.GetClient<T>();
             if (typeof(T).GetSugarSplitTable() != null)
             {
-                await dbContext.SqlSugarClient.Insertable(list).SplitTable().ExecuteCommandAsync();
+                await client.Insertable(list).SplitTable().ExecuteCommandAsync();
                 return list.Count;
             }
-            dbContext.SqlSugarClient.Insertable(list).AddQueue();
+            client.Insertable(list).AddQueue();
             if (saveChange)
             {
-                return await dbContext.SqlSugarClient.SaveQueuesAsync();
+                return await client.SaveQueuesAsync();
             }
             return list.Count;
         }
@@ -125,7 +128,7 @@ namespace VOL.Core.DBManager
         }
         public static int UpdateRange<TSource>(this BaseDbContext dbContext, IEnumerable<TSource> entities, string[] properties, bool saveChanges = false) where TSource : class, new()
         {
-            return dbContext.SqlSugarClient.UpdateRange<TSource>(entities, properties, saveChanges);
+            return dbContext.GetClient<TSource>().UpdateRange<TSource>(entities, properties, saveChanges);
         }
         public static int Update<TSource>(this ISqlSugarClient sqlSugarClient, TSource entity, string[] properties, bool saveChanges = false) where TSource : class, new()
         {
@@ -155,6 +158,8 @@ namespace VOL.Core.DBManager
             }
             bool splitTable = typeof(TSource).GetSugarSplitTable() != null;
             IUpdateable<TSource> updateable = null;
+            //按实体路由到它所在的库(AddQueue与SaveQueues必须是同一个连接)
+            sqlSugarClient = EntityDbRouter.Route<TSource>(sqlSugarClient);
             if (properties == null || properties.Length == 0)
             {
                 updateable = sqlSugarClient.Updateable<TSource>(entities.ToList());//.AddQueue();
@@ -243,7 +248,10 @@ namespace VOL.Core.DBManager
 
         public static ISugarQueryable<TEntity> Set<TEntity>(this ISqlSugarClient sqlSugarClient, bool filterDeleted = false) where TEntity : class, new()
         {
-            return  sqlSugarClient.Queryable<TEntity>();
+            //按实体上的[Entity(DBServer)]路由：传进来的是总入口(SqlSugarScope)时才切库，
+            //已经是具体连接的(调用方明确指定过库)保持原样。
+            //这样 DbManger.Db.Set<T>()、WorkFlowManager 里的动态分库查询都会自动走对的库
+            return EntityDbRouter.Route<TEntity>(sqlSugarClient).Queryable<TEntity>();
         }
 
         public static List<T> QueryList<T>(this ISqlSugarClient sqlSugarClient, string sql, object parameters)

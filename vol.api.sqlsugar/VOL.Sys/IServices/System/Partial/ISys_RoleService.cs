@@ -45,6 +45,21 @@ namespace VOL.Sys.IServices
         /// <returns></returns>
         List<int> GetAllChildrenRoleIdAndSelf();
 
+        /// <summary>
+        /// 根据用户的角色获取对应的应用AppId列表(多应用支持)
+        /// </summary>
+        /// <param name="roleIds"></param>
+        /// <returns></returns>
+        List<int> GetAppIdsByRoleIds(int[] roleIds);
+
+        /// <summary>
+        /// 获取用户在指定应用下的角色ID列表(多应用支持)
+        /// </summary>
+        /// <param name="roleIds"></param>
+        /// <param name="appId"></param>
+        /// <returns></returns>
+        int[] GetRoleIdsByAppId(int[] roleIds, int appId);
+
     }
 }
 

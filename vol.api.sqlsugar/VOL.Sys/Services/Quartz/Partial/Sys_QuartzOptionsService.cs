@@ -53,10 +53,47 @@ namespace VOL.Sys.Services
         }
 
         WebResponseContent webResponse = new WebResponseContent();
+
+        /// <summary>
+        /// 根据Cron表达式生成中文描述(与前端CronBuilderDialog生成的四种频率对应)
+        /// Cron格式: 秒 分 时 日 月 周
+        /// </summary>
+        private string GenerateCronDescr(string cronExpression)
+        {
+            if (string.IsNullOrWhiteSpace(cronExpression)) return "";
+            var parts = cronExpression.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 6) return cronExpression;
+
+            string min = parts[1], hour = parts[2], day = parts[3], week = parts[5];
+
+            if (hour == "*")
+            {
+                return $"每小时第{min}分钟执行";
+            }
+            if (week != "?" && week != "*")
+            {
+                var dayMap = new Dictionary<string, string>
+                {
+                    {"MON","星期一"},{"TUE","星期二"},{"WED","星期三"},{"THU","星期四"},
+                    {"FRI","星期五"},{"SAT","星期六"},{"SUN","星期日"}
+                };
+                string dayName = dayMap.ContainsKey(week) ? dayMap[week] : week;
+                return $"每周{dayName} {hour.PadLeft(2, '0')}:{min.PadLeft(2, '0')}执行";
+            }
+            if (day != "*" && day != "?")
+            {
+                return $"每月{day}日 {hour.PadLeft(2, '0')}:{min.PadLeft(2, '0')}执行";
+            }
+            return $"每天{hour.PadLeft(2, '0')}:{min.PadLeft(2, '0')}执行";
+        }
+
         public override WebResponseContent Add(SaveModel saveDataModel)
         {
             AddOnExecuting = (Sys_QuartzOptions options, object list) =>
             {
+                //根据cron表达式自动生成中文描述
+                options.CronDescr = GenerateCronDescr(options.CronExpression);
+                options.CronStr = options.CronExpression;
                 options.Status = (int)TriggerState.Paused;
                 return webResponse.OK();
             };
@@ -88,6 +125,13 @@ namespace VOL.Sys.Services
 
         public override WebResponseContent Update(SaveModel saveModel)
         {
+            //根据cron表达式自动生成中文描述，加入MainData确保框架更新这些字段
+            string cronExpr = saveModel.MainData.ContainsKey("CronExpression") ? saveModel.MainData["CronExpression"]?.ToString() : "";
+            if (!string.IsNullOrWhiteSpace(cronExpr))
+            {
+                saveModel.MainData["CronDescr"] = GenerateCronDescr(cronExpr);
+                saveModel.MainData["CronStr"] = cronExpr;
+            }
 
             UpdateOnExecuted = (Sys_QuartzOptions options, object addList, object updateList, List<object> delKeys) =>
             {

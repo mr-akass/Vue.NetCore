@@ -411,7 +411,13 @@ namespace VOL.Core.WorkFlow
             //dbContext.Entry(workTable).State = EntityState.Detached;
             dbContext.Update(workTable);
             dbContext.SaveChanges();
-
+            //业务表配了[Entity(DBServer)]时，它的队列排在业务库那个连接上，
+            //上面的SaveChanges只提交了默认库(Sys_WorkFlowTable)，这里再补一次业务库的提交，
+            //否则审批状态的回写会被静默丢弃
+            if (changeTableStatus && EntityDbRouter.IsRouted(typeof(T)))
+            {
+                dbContext.SaveChanges<T>();
+            }
         }
         /// <summary>
         /// 新建时写入流程
@@ -1232,7 +1238,8 @@ namespace VOL.Core.WorkFlow
             dbContext.SaveChanges();
 
             tableDbContext.Update<T>(entity);
-            tableDbContext.SaveChanges();
+            //业务表可能被路由到别的库，队列必须由排队的那个连接提交
+            tableDbContext.SaveChanges<T>();
 
             return webResponse.OK();
         }

@@ -12,6 +12,8 @@ namespace VOL.Sys.IServices
         Task<WebResponseContent> ReplaceToken();
         Task<WebResponseContent> ModifyPwd(string oldPwd, string newPwd);
         Task<WebResponseContent> GetCurrentUserInfo();
+        WebResponseContent GetUserRoles(int userId);
+        WebResponseContent SaveUserRoles(int[] roleIds, int userId);
     }
 }
 

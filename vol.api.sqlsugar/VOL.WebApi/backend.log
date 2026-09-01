@@ -1,0 +1,38 @@
+从 C:\Vue.NetCore\vol.api.sqlsugar\VOL.WebApi\Properties\launchSettings.json 使用启动设置...
+==================== 环境配置 ====================
+ASPNETCORE_ENVIRONMENT: Development
+RunningEnvironment:     DEV
+配置文件: appsettings.json + appsettings.Development.json
+==================================================
+系统启动 环境:Development(DEV) 时间:2026-08-04 15:46:48
+SELECT [WorkFlow_Id],[WorkName],[WorkTable],[WorkTableName],[Weight],[Enable],[AuditingEdit],[NodeConfig],[LineConfig],[Remark],[CreateID],[Creator],[CreateDate],[ModifyID],[Modifier],[ModifyDate] FROM [Sys_WorkFlow]  WHERE  ([WorkTable] IN ('MES_ProductionReporting')) 
+SELECT [WorkStepFlow_Id] AS [WorkStepFlow_Id],[WorkFlow_Id] AS [WorkFlow_Id],[StepId] AS [StepId],[StepName] AS [StepName],[StepType] AS [StepType],[StepValue] AS [StepValue],[Remark] AS [Remark],[OrderId] AS [OrderId],[CreateDate] AS [CreateDate],[CreateID] AS [CreateID],[Creator] AS [Creator],[Enable] AS [Enable],[Modifier] AS [Modifier],[ModifyDate] AS [ModifyDate],[ModifyID] AS [ModifyID],[NextStepIds] AS [NextStepIds],[ParentId] AS [ParentId],[AuditRefuse] AS [AuditRefuse],[AuditBack] AS [AuditBack],[AuditMethod] AS [AuditMethod],[SendMail] AS [SendMail],[Filters] AS [Filters],[StepAttrType] AS [StepAttrType],[Weight] AS [Weight] FROM [Sys_WorkFlowStep]  WHERE   [WorkFlow_Id] = '28e37aa6-b6df-4af2-8188-a68b0571f650'   
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://[::]:9991
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Development
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Vue.NetCore\vol.api.sqlsugar\VOL.WebApi
+初始化流程表:【MES_ProductionReporting】成功
+Begin BulkCopy name:[Sys_Log] ,count: 2,current time: 2026/8/4 15:51:22 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 15:53:39 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 15:56:56 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:18:43 
+SELECT  [ColumnCNName] AS [ColumnCNName] , [TableTrueName] AS [TableTrueName] , [SortName] AS [SortName] , [TableName] AS [TableName] , [DetailCnName] AS [DetailCnName] , [DetailName] AS [DetailName] , [Table_Id] AS [Table_Id] , [MainKeyField] AS [MainKeyField] , [AsyncApi] AS [AsyncApi]  FROM [Sys_TableInfo] 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:18:55 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:18:56 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:19:31 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:19:38 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:19:45 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:19:54 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:20:34 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:20:37 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:20:46 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:23:57 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:24:05 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:24:20 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:24:36 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:24:39 
+Begin BulkCopy name:[Sys_Log] ,count: 1,current time: 2026/8/4 16:24:50 

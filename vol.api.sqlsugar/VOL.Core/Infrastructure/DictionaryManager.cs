@@ -39,11 +39,12 @@ namespace VOL.Core.Infrastructure
         /// <returns></returns>
         public static IEnumerable<Sys_Dictionary> GetDictionaries(IEnumerable<string> dicNos, bool executeSql = true)
         {
-            static List<Sys_DictionaryList> query(string sql)
+            static List<Sys_DictionaryList> query(string sql, string dbServer)
             {
                 try
                 {
-                    return DbManger.SqlSugarClient.QueryList<SourceKeyVaule>(sql, null).Select(s => new Sys_DictionaryList()
+                    //按字典配置的DBServer(Connections节点中的连接名)切换数据库执行
+                    return DbManger.GetDbClient(dbServer).QueryList<SourceKeyVaule>(sql, null).Select(s => new Sys_DictionaryList()
                     {
                         DicName = s.Value,
                         DicValue = s.Key.ToString()
@@ -63,7 +64,7 @@ namespace VOL.Core.Infrastructure
                     string sql = DictionaryHandler.GetCustomDBSql(item.DicNo, item.DbSql);
                     if (!string.IsNullOrEmpty(item.DbSql))
                     {
-                        item.Sys_DictionaryList = query(sql);
+                        item.Sys_DictionaryList = query(sql, item.DBServer);
                     }
                 }
                 yield return item;

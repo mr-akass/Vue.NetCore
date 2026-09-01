@@ -182,6 +182,14 @@ namespace VOL.Core.Extensions
             var method = arr.GetType().GetMethod("Contains");
             ConstantExpression constantCollection = Expression.Constant(arr);
             MemberExpression memberProperty = Expression.PropertyOrField(parameter, propertyName);
+            //字符串字段改用参数化的等值or链，不能用集合Contains(2026.08.24表头筛选中文查不到)：
+            //SqlSugar对集合Contains生成的是把值直接拼进sql的 IN ('值')，SqlServer对不带N前缀的
+            //字面量按库排序规则的代码页转换，Latin1排序规则的库里中文全变成??，所以中文永远筛不出结果；
+            //等值比较则会生成@参数(nvarchar)，中文原样传到数据库
+            if (proType == typeof(string))
+            {
+                return GetStringInExpression<T>(memberProperty, parameter, arr.Select(x => x as string).ToList(), expressionType);
+            }
             if (expressionType == LinqExpressionType.NotIn)
             {
                 return Expression.Lambda<Func<T, bool>>(Expression.Not(Expression.Call(constantCollection, method, memberProperty)), parameter);
@@ -191,6 +199,53 @@ namespace VOL.Core.Extensions
                 MethodCallExpression methodCall = Expression.Call(constantCollection, method, memberProperty);
                 return Expression.Lambda<Func<T, bool>>(methodCall, parameter);
             }
+        }
+
+        /// <summary>
+        /// 字符串集合的in查询：p=>p.name==v1||p.name==v2...(2026.08.24表头筛选中文)
+        /// 拆成等值or链而不是IN，是为了让SqlSugar把值作为参数传给数据库——
+        /// 拼进sql的字面量在非Unicode排序规则的库里会丢掉中文(变成??)
+        /// </summary>
+        private static Expression<Func<T, bool>> GetStringInExpression<T>(MemberExpression memberProperty, ParameterExpression parameter, List<string> values, LinqExpressionType expressionType)
+        {
+            Expression body = null;
+            foreach (string value in values.Where(x => x != null).Distinct())
+            {
+                Expression equal = Expression.Equal(memberProperty, Expression.Constant(value, typeof(string)));
+                body = body == null ? equal : Expression.OrElse(body, equal);
+            }
+            //值全被过滤掉时不能返回true(会变成不带条件的全表查询)
+            if (body == null)
+            {
+                return expressionType == LinqExpressionType.NotIn ? True<T>() : False<T>();
+            }
+            if (expressionType == LinqExpressionType.NotIn)
+            {
+                body = Expression.Not(body);
+            }
+            return Expression.Lambda<Func<T, bool>>(body, parameter);
+        }
+
+        /// <summary>
+        /// 日期集合按天匹配(2026.07.29表头筛选)：
+        /// p=>(p.date>=d1&&p.date<d1+1天)||(p.date>=d2&&p.date<d2+1天)...
+        /// </summary>
+        private static Expression<Func<T, bool>> GetDateRangeInExpression<T>(MemberExpression memberProperty, ParameterExpression parameter, List<DateTime> dates, LinqExpressionType expressionType)
+        {
+            UnaryExpression member = Expression.Convert(memberProperty, typeof(DateTime));
+            Expression body = null;
+            foreach (DateTime date in dates.Distinct())
+            {
+                Expression range = Expression.AndAlso(
+                    Expression.GreaterThanOrEqual(member, Expression.Constant(date)),
+                    Expression.LessThan(member, Expression.Constant(date.AddDays(1))));
+                body = body == null ? range : Expression.OrElse(body, range);
+            }
+            if (expressionType == LinqExpressionType.NotIn)
+            {
+                body = Expression.Not(body);
+            }
+            return Expression.Lambda<Func<T, bool>>(body, parameter);
         }
 
         public static bool CheckFilterNullExpression(this LinqExpressionType filterType)
@@ -369,6 +424,32 @@ namespace VOL.Core.Extensions
             if (expressionType == LinqExpressionType.In || expressionType == LinqExpressionType.NotIn)
             {
                 if (!(propertyValue is System.Collections.IList list) || list.Count == 0) return x => false;
+
+                //日期类型且值均为yyyy-MM-dd格式(长度10)时按天区间匹配(2026.07.29表头筛选)
+                //如in查询值2026-07-09能匹配当天所有时间的数据
+                if (proType == typeof(DateTime) || proType == typeof(DateTime?))
+                {
+                    List<DateTime> dates = new List<DateTime>();
+                    bool allDateOnly = true;
+                    foreach (var value in list)
+                    {
+                        string dateStr = value?.ToString()?.Trim();
+                        if (string.IsNullOrEmpty(dateStr)) continue;
+                        if (dateStr.Length == 10 && DateTime.TryParse(dateStr, out DateTime date))
+                        {
+                            dates.Add(date.Date);
+                        }
+                        else
+                        {
+                            allDateOnly = false;
+                            break;
+                        }
+                    }
+                    if (allDateOnly && dates.Count > 0)
+                    {
+                        return GetDateRangeInExpression<T>(memberProperty, parameter, dates, expressionType);
+                    }
+                }
 
                 var res = typeof(LambdaExtensions).GetMethod("GetContainsExpression", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Static)
                            .MakeGenericMethod(new Type[] { typeof(T), proType })

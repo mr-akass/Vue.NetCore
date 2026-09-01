@@ -43,15 +43,18 @@ namespace VOL.Sys.Services
             string msg = string.Empty;
             //   2020.06.12增加验证码
             IMemoryCache memoryCache = _context.GetService<IMemoryCache>();
-            string cacheCode = (memoryCache.Get(loginInfo.UUID) ?? "").ToString();
-            if (string.IsNullOrEmpty(cacheCode))
+            if (verificationCode)
             {
-                return webResponse.Error("验证码已失效");
-            }
-            if (cacheCode.ToLower() != loginInfo.VerificationCode.ToLower())
-            {
-                memoryCache.Remove(loginInfo.UUID);
-                return webResponse.Error("验证码不正确");
+                string cacheCode = (memoryCache.Get(loginInfo.UUID) ?? "").ToString();
+                if (string.IsNullOrEmpty(cacheCode))
+                {
+                    return webResponse.Error("验证码已失效");
+                }
+                if (cacheCode.ToLower() != loginInfo.VerificationCode.ToLower())
+                {
+                    memoryCache.Remove(loginInfo.UUID);
+                    return webResponse.Error("验证码不正确");
+                }
             }
             try
             {
@@ -68,7 +71,34 @@ namespace VOL.Sys.Services
                     Role_Id = user.Role_Id
                 });
                 user.Token = token;
-                webResponse.Data = new { token, userName = user.UserTrueName, img = user.HeadImageUrl };
+                //多角色支持：返回用户全部角色(Sys_UserRole启用的角色 ∪ 主角色)
+                var roleIds = repository.DbContext.Set<Sys_UserRole>()
+                    .Where(x => x.UserId == user.User_Id && x.Enable == 1)
+                    .Select(s => s.RoleId).ToList();
+                if (user.Role_Id > 0 && !roleIds.Contains(user.Role_Id))
+                {
+                    roleIds.Insert(0, user.Role_Id);
+                }
+                var roles = repository.DbContext.Set<Sys_Role>()
+                    .Where(x => roleIds.Contains(x.Role_Id))
+                    .Select(s => new { s.Role_Id, s.RoleName }).ToList();
+                //多应用支持：返回用户有权限的应用(角色所属应用 ∩ 启用的应用)
+                var isSuperAdmin = roleIds.Any(x => UserContext.IsRoleIdSuperAdmin(x));
+                var roleAppIds = Sys_RoleService.Instance.GetAppIdsByRoleIds(roleIds.ToArray());
+                var enabledAppIds = repository.DbContext.Set<Sys_Application>()
+                    .Where(x => x.Enabled == true)
+                    .Select(x => x.AppID).ToList();
+                var appIds = roleAppIds.Where(id => enabledAppIds.Contains(id)).ToList();
+                webResponse.Data = new
+                {
+                    token,
+                    userName = user.UserTrueName,
+                    img = user.HeadImageUrl,
+                    userId = user.User_Id,
+                    isSuperAdmin,
+                    appIds,
+                    roles
+                };
                 repository.Update(user, x => x.Token, true);
                 UserContext.Current.LogOut(user.User_Id);
 
@@ -87,7 +117,10 @@ namespace VOL.Sys.Services
             }
             finally
             {
-                memoryCache.Remove(loginInfo.UUID);
+                if (!string.IsNullOrEmpty(loginInfo.UUID))
+                {
+                    memoryCache.Remove(loginInfo.UUID);
+                }
                 Logger.Info(LoggerType.Login, loginInfo.Serialize(), webResponse.Message, msg);
             }
         }
@@ -258,6 +291,28 @@ namespace VOL.Sys.Services
             {
                 x.Token = null;
             });
+            //多角色支持：RoleName显示用户拥有的全部角色(Sys_UserRole启用的角色 ∪ 主角色)
+            var userIds = gridData.rows.Select(s => s.User_Id).ToList();
+            if (userIds.Count > 0)
+            {
+                var userRoles = repository.DbContext.Set<Sys_UserRole>()
+                    .Where(x => userIds.Contains(x.UserId) && x.Enable == 1)
+                    .Select(s => new { s.UserId, s.RoleId }).ToList();
+                var allRoleIds = userRoles.Select(s => s.RoleId)
+                    .Union(gridData.rows.Select(r => r.Role_Id)).Distinct().ToList();
+                var roleNames = repository.DbContext.Set<Sys_Role>()
+                    .Where(x => allRoleIds.Contains(x.Role_Id))
+                    .Select(s => new { s.Role_Id, s.RoleName }).ToList();
+                gridData.rows.ForEach(x =>
+                {
+                    var ids = userRoles.Where(r => r.UserId == x.User_Id).Select(s => s.RoleId).ToList();
+                    if (x.Role_Id > 0 && !ids.Contains(x.Role_Id))
+                    {
+                        ids.Insert(0, x.Role_Id);
+                    }
+                    x.RoleName = string.Join(" / ", roleNames.Where(r => ids.Contains(r.Role_Id)).Select(s => s.RoleName));
+                });
+            }
             return gridData;
         }
 
@@ -471,6 +526,121 @@ namespace VOL.Sys.Services
 
             repository.UpdateRange(update, x => new { x.Enable, x.ModifyDate, x.Modifier, x.ModifyID });
             repository.SaveChanges();
+        }
+
+        /// <summary>
+        /// 获取用户的全部角色及可分配的角色(多角色设置弹窗数据)
+        /// </summary>
+        /// <param name="userId"></param>
+        /// <returns></returns>
+        public WebResponseContent GetUserRoles(int userId)
+        {
+            var user = repository.FindFirst(x => x.User_Id == userId);
+            if (user == null)
+            {
+                return webResponse.Error("用户不存在");
+            }
+            //用户当前的角色：Sys_UserRole启用的角色 ∪ 主角色
+            var userRoleIds = repository.DbContext.Set<Sys_UserRole>()
+                .Where(x => x.UserId == userId && x.Enable == 1)
+                .Select(s => s.RoleId).ToList();
+            if (user.Role_Id > 0 && !userRoleIds.Contains(user.Role_Id))
+            {
+                userRoleIds.Insert(0, user.Role_Id);
+            }
+            //可分配的角色：超级管理员可分配所有角色，其他用户只能分配自己角色的下级角色
+            var rolesQuery = repository.DbContext.Set<Sys_Role>().Where(x => x.Enable == 1);
+            if (!UserContext.Current.IsSuperAdmin)
+            {
+                List<int> childRoleIds = Sys_RoleService.Instance.GetAllChildrenRoleId(UserContext.Current.RoleId);
+                rolesQuery = rolesQuery.Where(x => childRoleIds.Contains(x.Role_Id));
+            }
+            var roles = rolesQuery.Select(s => new { id = s.Role_Id, parentId = s.ParentId, name = s.RoleName }).ToList();
+            return webResponse.OK(null, new
+            {
+                userRoleIds = userRoleIds.Distinct(),
+                mainRoleId = user.Role_Id,
+                roles
+            });
+        }
+
+        /// <summary>
+        /// 保存用户的多个角色(差量维护Sys_UserRole：新增/移除置0/重新勾选置1)
+        /// 主角色(Sys_User.Role_Id)由用户编辑表单维护，权限始终包含主角色
+        /// </summary>
+        /// <param name="roleIds"></param>
+        /// <param name="userId"></param>
+        /// <returns></returns>
+        public WebResponseContent SaveUserRoles(int[] roleIds, int userId)
+        {
+            if (userId <= 0)
+            {
+                return webResponse.Error("参数不完整");
+            }
+            var dbUser = repository.FindFirst(x => x.User_Id == userId);
+            if (dbUser == null)
+            {
+                return webResponse.Error("用户不存在");
+            }
+            roleIds = (roleIds ?? new int[0]).Where(x => x > 0).Distinct().ToArray();
+            //越权校验：非超级管理员只能分配自己角色的下级角色，且不能分配超级管理员角色
+            if (!UserContext.Current.IsSuperAdmin)
+            {
+                if (roleIds.Any(x => UserContext.IsRoleIdSuperAdmin(x)))
+                {
+                    return webResponse.Error("不能分配超级管理员角色");
+                }
+                List<int> childRoleIds = Sys_RoleService.Instance.GetAllChildrenRoleId(UserContext.Current.RoleId);
+                var invalid = roleIds.Where(x => !childRoleIds.Contains(x) && x != dbUser.Role_Id).ToArray();
+                if (invalid.Length > 0)
+                {
+                    return webResponse.Error("没有权限分配角色ID:" + string.Join(",", invalid));
+                }
+            }
+
+            var existsRoles = repository.DbContext.Set<Sys_UserRole>().Where(x => x.UserId == userId)
+                .Select(s => new { s.Id, s.RoleId, s.Enable })
+                .ToList();
+
+            UserInfo currentUser = UserContext.Current.UserInfo;
+            //新分配的角色
+            var add = roleIds.Where(x => !existsRoles.Exists(r => r.RoleId == x)).Select(s => new Sys_UserRole()
+            {
+                UserId = userId,
+                RoleId = s,
+                Enable = 1,
+                CreateDate = DateTime.Now,
+                Creator = currentUser.UserTrueName,
+                CreateID = currentUser.User_Id
+            }).ToList();
+
+            //移除的角色(软删除置0)
+            var update = existsRoles.Where(x => !roleIds.Contains(x.RoleId) && x.Enable == 1).Select(s => new Sys_UserRole()
+            {
+                Id = s.Id,
+                Enable = 0,
+                ModifyDate = DateTime.Now,
+                Modifier = currentUser.UserTrueName,
+                ModifyID = currentUser.User_Id
+            }).ToList();
+
+            //之前分配过的角色重新启用
+            update.AddRange(existsRoles.Where(x => roleIds.Contains(x.RoleId) && x.Enable != 1).Select(s => new Sys_UserRole()
+            {
+                Id = s.Id,
+                Enable = 1,
+                ModifyDate = DateTime.Now,
+                Modifier = currentUser.UserTrueName,
+                ModifyID = currentUser.User_Id
+            }).ToList());
+
+            repository.AddRange(add);
+            repository.UpdateRange(update, x => new { x.Enable, x.ModifyDate, x.Modifier, x.ModifyID });
+            repository.SaveChanges();
+
+            //清除用户缓存，下次请求重新加载角色与权限
+            base.CacheContext.Remove(userId.GetUserIdKey());
+            return webResponse.OK("角色设置成功");
         }
 
         /// <summary>

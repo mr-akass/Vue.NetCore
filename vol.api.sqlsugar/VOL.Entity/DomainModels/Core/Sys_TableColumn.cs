@@ -308,6 +308,13 @@ namespace VOL.Entity.DomainModels
         public int? HeaderFilter { get; set; }
 
         /// <summary>
+        /// 表格快捷复制
+        /// </summary>
+        [Display(Name = "表格快捷复制")]
+        [Editable(true)]
+        public int? QuickCopy { get; set; }
+
+        /// <summary>
         /// 表格对齐方式
         /// </summary>
         [Display(Name = "表格对齐方式")]

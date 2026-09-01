@@ -194,7 +194,7 @@ DISTINCT
         /// <returns></returns>
         /// </summary>
         /// <returns></returns>
-        private string GetPgSqlModelInfo()
+        private string GetPgSqlModelInfo(bool isKdbndp)
         {
             StringBuilder stringBuilder = new StringBuilder();
 
@@ -222,7 +222,9 @@ DISTINCT
             stringBuilder.Append("				END  as ColumnType ");
             stringBuilder.Append("from 	information_schema.COLUMNS col  ");
             stringBuilder.Append("WHERE	\"lower\" ( TABLE_NAME ) = \"lower\" (@tableName )  ");
-            if (DBType.Name == "Kdbndp")
+            //人大金仓(Kdbndp)兼容pg语法，但系统表在 sys_catalog 下，不排掉会把系统表也查出来。
+            //这里必须用当前表所在库的类型判断，不能再读全局 DBType(多库后全局值只代表默认库)
+            if (isKdbndp)
             {
                 stringBuilder.Append(" and table_schema!='sys_catalog' ");
             }
@@ -364,7 +366,8 @@ DISTINCT
             string sql;
             string connection = GetConnectionKey(sysTableInfo);
 
-            SqlSugar.DbType dbType = SqlSugarDbType.GetType(DBType.Name);
+            //按表配置的DBServer(Connections节点中的连接名)确定数据库类型，为空使用默认库类型
+            SqlSugar.DbType dbType = SqlSugarDbType.GetType(sysTableInfo.DBServer);
             //  string name = DBType.Name.ToLower();
             // if (name == DbCurrentType.MySql.ToString().ToLower())
             if (dbType == SqlSugar.DbType.MySql)
@@ -374,7 +377,7 @@ DISTINCT
             //else if (name == DbCurrentType.PgSql.ToString().ToLower() || name == DbCurrentType.Kdbndp.ToString().ToLower())
             else if (dbType == SqlSugar.DbType.PostgreSQL || dbType == SqlSugar.DbType.Kdbndp)
             {
-                sql = GetPgSqlModelInfo();
+                sql = GetPgSqlModelInfo(dbType == SqlSugar.DbType.Kdbndp);
             }
             // else if (name == DbCurrentType.DM.ToString().ToLower())
             else if (dbType == SqlSugar.DbType.Dm)
@@ -390,7 +393,8 @@ DISTINCT
             {
                 sql = GetOracleModelInfo(tableName);
             }
-            List<TableColumnInfo> tableColumnInfoList = DbManger.Db.QueryList<TableColumnInfo>(sql, new { tableName });
+            //按DBServer切换数据库连接查询表结构
+            List<TableColumnInfo> tableColumnInfoList = DbManger.GetDbClient(sysTableInfo.DBServer).QueryList<TableColumnInfo>(sql, new { tableName });
             List<Sys_TableColumn> list = sysTableInfo.TableColumns;
             string msg = CreateEntityModel(list, sysTableInfo, tableColumnInfoList, 1);
             if (msg != "")
@@ -468,7 +472,7 @@ DISTINCT
             //else if (name == DbCurrentType.PgSql.ToString().ToLower() || name == DbCurrentType.Kdbndp.ToString().ToLower())
             else if (dbType == SqlSugar.DbType.PostgreSQL || dbType == SqlSugar.DbType.Kdbndp)
             {
-                sql = GetPgSqlStructure(tableName);
+                sql = GetPgSqlStructure(tableName, dbType == SqlSugar.DbType.Kdbndp);
             }
             // else if (name == DbCurrentType.DM.ToString().ToLower())
             else if (dbType == SqlSugar.DbType.Dm)
@@ -489,8 +493,9 @@ DISTINCT
 
         private string GetConnectionKey(Sys_TableInfo tableInfo)
         {
-            string db = DBType.Name;
-            return db;
+            //返回表所在数据库(DBServer)的连接字符串，mysql生成代码时需要从连接串解析数据库名
+            string dbServer = tableInfo?.DBServer;
+            return DBServerProvider.GetConnectionString(string.IsNullOrWhiteSpace(dbServer) ? null : dbServer);
         }
 
         /// <summary>
@@ -512,10 +517,10 @@ DISTINCT
                 tableName = tableInfo.TableTrueName;
             }
             string connection = GetConnectionKey(tableInfo);
-            string sql = GetCurrentSql(tableName, connection, DBType.Name);
+            string sql = GetCurrentSql(tableName, connection, tableInfo.DBServer);
 
-            //获取表结构
-            List<Sys_TableColumn> columns = repository.SqlSugarClient
+            //获取表结构(按表配置的DBServer切换数据库连接)
+            List<Sys_TableColumn> columns = DbManger.GetDbClient(tableInfo.DBServer)
                   .QueryList<Sys_TableColumn>(sql, new { tableName });
    
             //获取现在配置好的表结构
@@ -922,7 +927,8 @@ DISTINCT
             {
                 return $"请设置[app列]";
             }
-            bool editLine = false;
+            //编辑模式(Sys_TableInfo.EditType)：2=表格行内编辑，主表列生成edit:{type}配置(2026.08.10)
+            bool editLine = !isApp && sysTableInfo.EditType == 2;
             StringBuilder sb = GetGridColumns(sysColumnList, sysTableInfo.ExpressField, detail: editLine, true, app: isApp);
             if (sb.Length == 0) return "未获取到数据!";
             string columns = sb.ToString().Trim();
@@ -1241,7 +1247,9 @@ DISTINCT
                     }
                 }
                 //生成配置2025.02
-                vueOptions = vueOptions.Replace("{$false}",  "false")
+                //编辑模式：1=新页面编辑(newTabEdit)，2=表格行内编辑(editTable) 2026.08.10
+                vueOptions = vueOptions.Replace("{$false}", sysTableInfo.EditType == 1 ? "true" : "false")
+                    .Replace("{#editTable}", sysTableInfo.EditType == 2 ? "true" : "false")
                     .Replace("{fixedSearch}", sysTableInfo.FixedSearch == 1 ? "true" : "false")
                     .Replace("{#showFooterDetail}", sysTableInfo.ShowDetail == 1 ? "true" : "false")
                     .Replace("{#quickQueryFields}", string.IsNullOrEmpty(sysTableInfo.QuickQueryFields) ? "" : sysTableInfo.QuickQueryFields);
@@ -1475,7 +1483,7 @@ DISTINCT
         /// </summary>
         /// <param name="tableName"></param>
         /// <returns></returns>
-        private string GetPgSqlStructure(string tableName)
+        private string GetPgSqlStructure(string tableName, bool isKdbndp)
         {
             StringBuilder stringBuilder = new StringBuilder();
             stringBuilder.Append("SELECT ");
@@ -1588,7 +1596,8 @@ DISTINCT
             stringBuilder.Append("	) keyTable ON col.COLUMN_NAME = keyTable.colname  ");
             stringBuilder.Append("WHERE ");
             stringBuilder.Append("	\"lower\" ( TABLE_NAME ) = \"lower\" ( @tableName )  ");
-            if (DBType.Name == "Kdbndp")
+            //同 GetPgSqlModelInfo：按表所在库的类型判断，不读全局 DBType
+            if (isKdbndp)
             {
                 stringBuilder.Append(" and table_schema!='sys_catalog' ");
             }
@@ -1769,10 +1778,13 @@ DISTINCT
                 TableName = tableName,
                 Namespace = nameSpace,
                 FolderName = foldername,
+                //记录表所在数据库(Connections节点中的连接名)，为空使用默认库
+                DBServer = string.IsNullOrWhiteSpace(dbServer) ? null : dbServer,
                 Enable = 1
             };
             string connection = GetConnectionKey(tableInfo);
-            List<Sys_TableColumn> columns = repository.SqlSugarClient
+            //按DBServer切换数据库连接查询表结构
+            List<Sys_TableColumn> columns = DbManger.GetDbClient(tableInfo.DBServer)
                 .QueryList<Sys_TableColumn>(GetCurrentSql(tableName, connection, dbServer), new { tableName });
           
             int orderNo = (columns.Count + 10) * 50;
@@ -1917,6 +1929,11 @@ DISTINCT
                         if (item.HeaderFilter == 1)
                         {
                             sb.Append("filterData:true,");
+                        }
+                        //表格快捷复制：值后面显示复制图标(app端没有粘贴板概念，不生成)
+                        if (item.QuickCopy == 1)
+                        {
+                            sb.Append("quickCopy:true,");
                         }
                         if (!string.IsNullOrEmpty(item.TextAlign) && item.TextAlign != "left")
                         {
@@ -2156,7 +2173,7 @@ DISTINCT
                         tableColumnInfo.ColumnType = "uniqueidentifier";
                     }
                     if ((column.IsKey == 1 && (column.ColumnType == "uniqueidentifier" || tableColumnInfo.ColumnType.ToLower() == "guid"))
-                        || (IsMysql(DBType.Name) && column.ColumnType == "string" && column.Maxlength == 36))
+                        || (IsMysql(tableInfo.DBServer) && column.ColumnType == "string" && column.Maxlength == 36))
                     {
                         tableColumnInfo.ColumnType = "uniqueidentifier";
                     }
@@ -2220,7 +2237,7 @@ DISTINCT
                 }
                 //如果主键是string,则默认为是Guid或者使用的是mysql数据，字段类型是字符串并且长度是36则默认为是Guid
                 if ((column?.ColumnType?.ToLower() == "uniqueidentifier" || column?.ColumnType?.ToLower() == "guid")
-                   || (IsMysql(DBType.Name) && column.ColumnType == "string" && column.Maxlength == 36))
+                   || (IsMysql(tableInfo.DBServer) && column.ColumnType == "string" && column.Maxlength == 36))
                 {
                     //if (column.ColumnType == "string" && DBType.Name.ToLower() != DbCurrentType.MsSql.ToString().ToLower())
                     //{
@@ -2300,7 +2317,12 @@ DISTINCT
 
                 entityAttribute.Add("DetailTableCnName = \"" + tableInfo.DetailCnName + "\"");
             }
-      
+            //记录表所在数据库(Connections节点中的连接名)，与参考实现保持一致
+            if (!string.IsNullOrEmpty(tableInfo.DBServer))
+            {
+                entityAttribute.Add("DBServer = \"" + tableInfo.DBServer + "\"");
+            }
+
             if (createType == 1)
             {
                 if (sysColumn.Any(x => x.ApiInPut > 0))
@@ -2328,7 +2350,7 @@ DISTINCT
             {
                 string tableTrueName = tableInfo.TableTrueName;
                 //2020.06.14 pgsql数据库，设置表名为小写(数据库创建表的时候也要使用小写)
-                if (DBType.Name == DbCurrentType.PgSql.ToString())
+                if (SqlSugarDbType.GetType(tableInfo.DBServer) == SqlSugar.DbType.PostgreSQL)
                 {
                     tableTrueName = tableTrueName.ToLower();
                 }
@@ -2493,11 +2515,34 @@ DISTINCT
             return SqlSugarDbType.GetType(dbServer) == SqlSugar.DbType.MySql;
             //  return DBType.Name.ToLower() == DbCurrentType.MySql.ToString().ToLower();
         }
+
+        /// <summary>
+        /// 规范化"所在数据库"：空白、default、未注册的连接名都表示默认库，统一成null好做相等比较
+        /// (必须与 EntityDbRouter.Normalize 同一套规则：运行时把 DBServer="ServiceDbContext" 这类
+        ///  历史值当默认库处理，这里若按字面比较，主表配了历史值、明细表没配就会被误判成跨库而生成不了代码)
+        /// </summary>
+        private static string NormalizeDbServer(string dbServer)
+        {
+            if (string.IsNullOrWhiteSpace(dbServer)) return null;
+            dbServer = dbServer.Trim();
+            if (string.Equals(dbServer, VOL.Core.DBManage.DbName.Default, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+            return VOL.Core.Configuration.AppSetting.GetConnection(dbServer) == null ? null : dbServer;
+        }
         private WebResponseContent ValidColumnString(Sys_TableInfo tableInfo)
         {
             WebResponseContent webResponse = new WebResponseContent(true);
             if (tableInfo.TableColumns?.Count == 0) return webResponse;
 
+            //表名与框架自身的表重名：生成的实体会和框架实体同名同命名空间(编译不过)，
+            //而且这些表被强制留在默认库(EntityDbRouter)，配了别的库也不会生效，必须在这里拦掉
+            if (VOL.Core.DBManager.EntityDbRouter.IsFrameworkTableName(tableInfo.TableName))
+            {
+                return webResponse.Error($"表名[{tableInfo.TableName}]与框架自带的表重名," +
+                    "生成的实体会与框架实体冲突(且框架表强制使用默认库),请把业务表改个名字再生成");
+            }
 
             if (tableInfo.TableColumns.Where(x => x.IsKey == 1).Count() > 1)
             {
@@ -2536,7 +2581,21 @@ DISTINCT
                 return webResponse.Error($"明细表【{string.Join(",", tableArr)}】必须先生成代码");
             }
             //明细表配置
-            var tableIno = repository.FindAsIQueryable(x => detailTables.Contains(x.TableName)).Select(s => new { s.TableName, s.MainKeyField }).ToList();
+            var tableIno = repository.FindAsIQueryable(x => detailTables.Contains(x.TableName)).Select(s => new { s.TableName, s.MainKeyField, s.DBServer }).ToList();
+
+            //主子表必须同库：跨库没有事务，主表提交、子表失败就是脏数据。
+            //运行时 EntityDbRouter 也会拦(抛异常)，但在这里拦掉才能给出可操作的提示，
+            //而不是让人生成完代码、跑起来才发现整个模块用不了
+            string mainDbServer = NormalizeDbServer(tableInfo.DBServer);
+            var crossDbTables = tableIno.Where(x => NormalizeDbServer(x.DBServer) != mainDbServer)
+                .Select(x => $"{x.TableName}({NormalizeDbServer(x.DBServer) ?? "默认库"})")
+                .ToList();
+            if (crossDbTables.Count > 0)
+            {
+                return webResponse.Error($"主表[{tableInfo.TableName}]所在数据库为[{mainDbServer ?? "默认库"}]," +
+                    $"明细表【{string.Join(",", crossDbTables)}】不在同一个数据库。" +
+                    "主子表跨库无法保证事务一致性,请把明细表的[所在数据库]改成与主表一致");
+            }
 
             foreach (var item in tableIno)
             {
@@ -2567,7 +2626,9 @@ DISTINCT
                     }
                 }
             }
-            if (!IsMysql()) return webResponse;
+            //这里原本用全局 DBType 判断，多库后必须按表自己的 DBServer 判断
+            //(后面的校验体已全部注释，保留判断只为将来补 mysql guid 外键长度校验时不再踩全局库的坑)
+            if (!IsMysql(tableInfo.DBServer)) return webResponse;
 
             //if (mainTableColumn.ColumnType?.ToLower() == "string" && mainTableColumn.Maxlength == 36)
             //{
@@ -2579,11 +2640,6 @@ DISTINCT
             //}
             //mysql如果主键使用的是guid，需要判断明细表的外键是否配置正确
             return webResponse;
-        }
-        private static bool IsMysql()
-        {
-            return DBType.Name.ToLower() == DbCurrentType.MySql.ToString().ToLower()
-                || DBType.Name.ToLower() == DbCurrentType.Oracle.ToString().ToLower();
         }
     }
     public class PanelHtml

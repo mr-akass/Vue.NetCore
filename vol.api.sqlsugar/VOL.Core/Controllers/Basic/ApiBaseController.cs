@@ -46,6 +46,19 @@ namespace VOL.Core.Controllers.Basic
             return JsonNormal(await task);
         }
         /// <summary>
+        /// 表头筛选：分页获取指定列去重后的值(2026.07.29)
+        /// </summary>
+        /// <param name="options"></param>
+        /// <returns></returns>
+        [ApiActionPermission(ActionPermissionOptions.Search)]
+        [HttpPost, Route("getColumnDistinctValues")]
+        [ApiExplorerSettings(IgnoreApi = true)]
+        public virtual async Task<ActionResult> GetColumnDistinctValues([FromBody] ColumnDistinctValueOptions options)
+        {
+            dynamic task = InvokeService("GetColumnDistinctValuesAsync", [options]);
+            return JsonNormal(await task);
+        }
+        /// <summary>
         /// 获取明细分页数据
         /// </summary>
         /// <param name="loadData"></param>

@@ -72,10 +72,11 @@ namespace VOL.Entity.DomainModels
        public string DbSql { get; set; }
 
        /// <summary>
-       ///DBServer
+       ///DBServer(sql语句执行所在数据库，对应appsettings.json中Connections节点的连接名，为空使用默认库)
        /// </summary>
        [Display(Name ="DBServer")]
        [Column(TypeName="nvarchar(max)")]
+       [Editable(true)]
        public string DBServer { get; set; }
 
        /// <summary>

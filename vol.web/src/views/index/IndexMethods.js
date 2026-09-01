@@ -1,5 +1,6 @@
 import MessageConfig from './MessageConfig.js'
 import { computed, watch, nextTick } from 'vue'
+import { getSavedAppId } from '@/config/appConfig'
 
 /** 顶部主导航「更多」预留宽度（与测量逻辑一致） */
 export const TOP_NAV_RESERVE_MORE = 80
@@ -149,7 +150,7 @@ export function registerTopNav(dataConfig) {
   }
 }
 
-export default function (proxy, dataConfig, router, onSelect) {
+export default async function (proxy, dataConfig, router, onSelect) {
   const store = proxy.$store
   let _userInfo = store.getters.getUserInfo()
   if (!_userInfo) {
@@ -165,7 +166,16 @@ export default function (proxy, dataConfig, router, onSelect) {
     )
   }
 
-  proxy.http.get('api/menu/getTreeMenu', {}, false).then((result) => {
+  //多应用支持：初始化应用列表并应用当前应用的标题配置
+  await store.dispatch('initAppList')
+  const appConfig = store.getters.getAppConfig()
+  if (appConfig && appConfig.title) {
+    document.title = appConfig.title
+  }
+  //按当前选择的应用加载菜单(超管可不带appId加载全部菜单)
+  const currentAppId = getSavedAppId()
+  const menuUrl = currentAppId ? `api/menu/getTreeMenu?appId=${currentAppId}` : 'api/menu/getTreeMenu'
+  proxy.http.get(menuUrl, {}, false).then((result) => {
     const navMenuList = dataConfig.navMenuList
     const navCurrentMenuId = dataConfig.navCurrentMenuId
     const menuOptions = dataConfig.menuOptions

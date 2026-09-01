@@ -51,13 +51,11 @@ namespace VOL.Core.Middleware
                 var env = context.RequestServices.GetService(typeof(IWebHostEnvironment)) as IWebHostEnvironment;
                 string message = exception.Message + exception.InnerException;
                 Logger.Error(LoggerType.Exception, message);
+                //控制台输出+落盘到Logs/Error文件夹
+                Utilities.CustomConsole.WriteLine(NlogLoggerType.Error, $"服务器处理出现异常:{message}");
                 if (!env.IsDevelopment())
                 {
                     message = "服务器处理异常";
-                }
-                else
-                {
-                    Console.WriteLine($"服务器处理出现异常:{message}");
                 }
                 context.Response.StatusCode = 500;
                 context.Response.ContentType = ApplicationContentType.JSON;

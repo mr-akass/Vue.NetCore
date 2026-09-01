@@ -14,13 +14,14 @@ export default function(){
     const tableCNName = table.cnName;
     const newTabEdit = false;
     const key = table.key;
-    const editFormFields = {"DicNo":"","DicName":"","ParentId":"","OrderNo":"","Remark":"","Enable":"","DbSql":""};
+    const editFormFields = {"DicNo":"","DicName":"","ParentId":"","OrderNo":"","Remark":"","Enable":"","DBServer":"","DbSql":""};
     const editFormOptions = [[{"title":"字典编号","required":true,"field":"DicNo"},
                                {"title":"字典名称","required":true,"field":"DicName"},
                                {"title":"父级ID","required":true,"field":"ParentId","type":"number"}],
                               [{"title":"排序号","field":"OrderNo","type":"number"},
                                {"title":"备注","field":"Remark","type":"text"},
                                {"dataKey":"enable","data":[],"title":"是否启用","required":true,"field":"Enable","type":"select"}],
+                              [{"dataKey":"dbServer","data":[],"title":"所在数据库","field":"DBServer","type":"select","placeholder":"sql语句执行的数据库(默认库可不选)"}],
                               [{"title":"sql语句","field":"DbSql","colSize":12,"type":"textarea"}]];
     const searchFormFields = {"DicNo":"","DicName":"","ParentId":"","Enable":"","CreateDate":"","ModifyDate":""};
     const searchFormOptions = [[{"title":"字典编号","field":"DicNo"},{"title":"字典名称","field":"DicName","type":"textarea"},{"title":"父级ID","field":"ParentId","type":"number"}],[{"dataKey":"enable","data":[],"title":"是否启用","field":"Enable","type":"select"},{"title":"创建时间","field":"CreateDate","type":"datetime"},{"title":"修改时间","field":"ModifyDate","type":"datetime"}]];
@@ -30,7 +31,7 @@ export default function(){
                        {field:'ParentId',title:'父级ID',type:'int',width:90,require:true,align:'left'},
                        {field:'Config',title:'配置项',type:'string',width:300,hidden:true,align:'left'},
                        {field:'DbSql',title:'sql语句',type:'string',width:200,align:'left'},
-                       {field:'DBServer',title:'所在数据库',type:'string',bind:{ key:'dbServer',data:[]},width:90,hidden:true,align:'left'},
+                       {field:'DBServer',title:'所在数据库',type:'string',bind:{ key:'dbServer',data:[]},width:110,align:'left'},
                        {field:'OrderNo',title:'排序号',type:'int',width:90,align:'left'},
                        {field:'Remark',title:'备注',type:'string',width:90,align:'left'},
                        {field:'Enable',title:'是否启用',type:'byte',bind:{ key:'enable',data:[]},width:90,require:true,align:'left'},

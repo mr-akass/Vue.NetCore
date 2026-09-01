@@ -52,7 +52,8 @@ namespace VOL.Sys.Controllers
         [ObjectModelValidatorFilter(ValidatorModel.Login)]
         public async Task<IActionResult> Login([FromBody] LoginInfo loginInfo)
         {
-            return Json(await Service.Login(loginInfo));
+            //verificationCode: false=不校验验证码(2026.08.04关闭，登录页已去掉验证码；如需恢复改回true并还原前端Login.vue验证码输入)
+            return Json(await Service.Login(loginInfo, verificationCode: false));
         }
 
         private readonly ConcurrentDictionary<int, object> _lockCurrent = new ConcurrentDictionary<int, object>();
@@ -189,6 +190,50 @@ namespace VOL.Sys.Controllers
 
             _userRepository.Update(user, x => new { x.UserTrueName, x.Gender, x.Remark, x.HeadImageUrl }, true);
             return Content("修改成功");
+        }
+
+        /// <summary>
+        /// 获取用户的全部角色及可分配的角色(多角色设置弹窗数据)
+        /// </summary>
+        /// <param name="userId"></param>
+        /// <returns></returns>
+        [HttpGet, HttpPost, Route("getUserRoles"), ApiActionPermission(ActionPermissionOptions.Search)]
+        public IActionResult GetUserRoles(int userId)
+        {
+            return Json(Service.GetUserRoles(userId));
+        }
+
+        /// <summary>
+        /// 保存用户的多个角色(body为选中的角色ID数组)
+        /// </summary>
+        /// <param name="roleIds"></param>
+        /// <param name="userId"></param>
+        /// <returns></returns>
+        [HttpPost, Route("saveRole"), ApiActionPermission(ActionPermissionOptions.Update)]
+        public IActionResult SaveRole([FromBody] int[] roleIds, int userId)
+        {
+            return Json(Service.SaveUserRoles(roleIds, userId));
+        }
+
+        /// <summary>
+        /// 站内消息收件人下拉数据源(所有启用用户)
+        /// </summary>
+        /// <returns></returns>
+        [HttpGet, Route("GetMessageRecipients")]
+        public IActionResult GetMessageRecipients()
+        {
+            var users = _userRepository.FindAsIQueryable(x => x.Enable == 1)
+                .OrderBy(x => x.UserName)
+                .Select(x => new
+                {
+                    key = x.UserName,
+                    value = string.IsNullOrEmpty(x.UserTrueName)
+                        ? x.UserName
+                        : x.UserName + "(" + x.UserTrueName + ")"
+                })
+                .ToList();
+
+            return JsonNormal(users);
         }
     }
 }

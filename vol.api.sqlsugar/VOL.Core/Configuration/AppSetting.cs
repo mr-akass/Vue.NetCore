@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using System.Collections.Generic;
 using System.IO;
 using VOL.Core.Const;
 using VOL.Core.Extensions;
@@ -31,6 +32,47 @@ namespace VOL.Core.Configuration
         {
             get { return _connection.UseSignalR; }
         }
+
+        /// <summary>
+        /// 多数据库命名连接(appsettings.json→Connections节点)，不含默认连接
+        /// </summary>
+        public static List<NamedConnection> Connections { get; private set; } = new List<NamedConnection>();
+
+        /// <summary>
+        /// 根据名称(ConfigId)获取命名连接，未配置返回null
+        /// </summary>
+        public static NamedConnection GetConnection(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            return Connections.Find(x => string.Equals(x.Name, name, System.StringComparison.OrdinalIgnoreCase));
+        }
+
+        /// <summary>
+        /// 追加/更新一个命名连接(数据库管理页新增连接时调用，见DbConnectionManager)
+        /// 采用写时复制：Connections 会被其他请求同时遍历(SqlSugarRegister/DBServerProvider)，
+        /// 直接往同一个List里Add会让正在foreach的线程抛"集合已修改"
+        /// </summary>
+        public static void AddConnection(NamedConnection connection)
+        {
+            if (connection == null || string.IsNullOrWhiteSpace(connection.Name)) return;
+            if (string.IsNullOrWhiteSpace(connection.DBType))
+            {
+                connection.DBType = _connection?.DBType;
+            }
+            lock (_connectionsLock)
+            {
+                var exists = GetConnection(connection.Name);
+                if (exists != null)
+                {
+                    exists.DBType = connection.DBType;
+                    exists.DbConnectionString = connection.DbConnectionString;
+                    return;
+                }
+                Connections = new List<NamedConnection>(Connections) { connection };
+            }
+        }
+
+        private static readonly object _connectionsLock = new object();
         public static Secret Secret { get; private set; }
 
         public static CreateMember CreateMember { get; private set; }
@@ -56,6 +98,11 @@ namespace VOL.Core.Configuration
         /// JWT有效期(分钟=默认120)
         /// </summary>
         public static int ExpMinutes { get; private set; } = 120;
+
+        /// <summary>
+        /// 当前运行环境标识(DEV/STG/PRD)，由appsettings.{环境}.json中的RunningEnvironment配置
+        /// </summary>
+        public static string RunningEnvironment { get; private set; }
 
         // 是否启用雪花ID
         public static bool EnableSnowFlakeID { get; set; } = false;
@@ -99,6 +146,8 @@ namespace VOL.Core.Configuration
 
             ShowSqlLog = configuration["ShowSqlLog"] == "1";
 
+            RunningEnvironment = configuration["RunningEnvironment"] ?? "";
+
 
             ExpMinutes = (configuration["ExpMinutes"] ?? "120").GetInt();
 
@@ -119,6 +168,27 @@ namespace VOL.Core.Configuration
                 _connection.DbConnectionString = _connection.DbConnectionString.DecryptDES(Secret.DB);
             }
             catch { }
+
+            //加载多数据库命名连接(Connections节点，可选)，节点下每个子节点名称即为连接标识(ConfigId)
+            Connections = new List<NamedConnection>();
+            foreach (var section in configuration.GetSection("Connections").GetChildren())
+            {
+                string connStr = section["DbConnectionString"];
+                if (string.IsNullOrWhiteSpace(connStr)) continue;
+                //默认连接固定使用Connection节点，忽略与其同名的配置
+                if (string.Equals(section.Key, "default", System.StringComparison.OrdinalIgnoreCase)) continue;
+                try
+                {
+                    connStr = connStr.DecryptDES(Secret.DB);
+                }
+                catch { }
+                Connections.Add(new NamedConnection
+                {
+                    Name = section.Key,
+                    DBType = section["DBType"] ?? _connection.DBType,
+                    DbConnectionString = connStr
+                });
+            }
 
             if (!string.IsNullOrEmpty(_connection.RedisConnectionString))
             {
@@ -149,6 +219,17 @@ namespace VOL.Core.Configuration
         public string RedisConnectionString { get; set; }
         public bool UseRedis { get; set; }
         public bool UseSignalR { get; set; }
+    }
+
+    /// <summary>
+    /// 多数据库命名连接(appsettings.json→Connections节点下的子节点)
+    /// Name为连接标识(即SqlSugar的ConfigId，字典/代码生成器中DBServer字段保存的值)
+    /// </summary>
+    public class NamedConnection
+    {
+        public string Name { get; set; }
+        public string DBType { get; set; }
+        public string DbConnectionString { get; set; }
     }
 
     public class CreateMember : TableDefaultColumns

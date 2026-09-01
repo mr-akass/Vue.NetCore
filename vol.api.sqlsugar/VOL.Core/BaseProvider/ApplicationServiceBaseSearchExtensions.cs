@@ -134,7 +134,9 @@ namespace VOL.Core.BaseProvider
         public static ISugarQueryable<TEntity> ConvertQueryFilter<TEntity>(this PageDataOptions options, ISugarQueryable<TEntity> queryable = null)
         where TEntity : class, new()
         {
-            queryable ??= DbManger.Db.Set<TEntity>();
+            //没有传入queryable时(如导出/明细查询)按实体上的[Entity(DBServer)]路由，
+            //否则从其他库生成的模块在这里会被固定到默认库
+            queryable ??= EntityDbRouter.GetClient<TEntity>().Set<TEntity>();
             List<SearchParameters> searchParametersList = options.GetSearchParameters();
             if (searchParametersList == null)
             {
@@ -151,7 +153,8 @@ namespace VOL.Core.BaseProvider
                         return x.Name.CreateExpression<TEntity>(null, filterType);
                     }
                 }
-                if (string.IsNullOrEmpty(x.Value))
+                //Values有值时不要求Value(只勾选多值的调用方可以不拼Value)
+                if (string.IsNullOrEmpty(x.Value) && !(x.Values?.Count > 0))
                 {
                     return null;
                 }
@@ -181,8 +184,12 @@ namespace VOL.Core.BaseProvider
                 //字段null处理
                 if (property == null) return null;
 
+                //in/notIn优先用Values数组：值本身含逗号时(如地区名"北京市,新疆")按Value拆逗号会拆坏
+                object[] rawValues = x.Values != null && x.Values.Count > 0
+                    ? x.Values.ToArray()
+                    : x.Value.Split(',');
                 //移除查询的值与数据库类型不匹配的数据
-                object[] values = property.ValidationValueForDbType(x.Value.Split(',')).Where(q => q.Item1).Select(s => s.Item3).ToArray();
+                object[] values = property.ValidationValueForDbType(rawValues).Where(q => q.Item1).Select(s => s.Item3).ToArray();
                 if (values == null || values.Length == 0)
                 {
                     return null;

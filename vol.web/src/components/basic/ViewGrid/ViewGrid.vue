@@ -507,6 +507,7 @@ import {
   initButtonsAuthFields,
   getButtons
 } from "./ViewGridInitButtonsAuthFields.jsx";
+import { initEditTable } from "./ViewGridEditTable.js";
 import { initReadonly } from "./ViewGridReadonly.jsx";
 import * as ViewGridProviderDetail from "./ViewGridProviderDetail.jsx";
 //审批初始化配置
@@ -705,6 +706,8 @@ export default {
       //审批初始化配置
       initAuditColumn(false);
       getButtons(proxy, props, ctx, dataConfig);
+      //表格行内编辑模式初始化(editTable:true)
+      initEditTable(proxy, props, dataConfig);
       initViewColumns(proxy, props, dataConfig, false);
       //初始编辑框等数据
       initBoxHeightWidth(proxy, props, ctx, dataConfig);

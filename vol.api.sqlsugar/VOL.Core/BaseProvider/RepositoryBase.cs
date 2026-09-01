@@ -41,21 +41,64 @@ namespace VOL.Core.BaseProvider
             }
         }
 
+        /// <summary>
+        /// 当前仓储主实体所在库的连接：实体上配了 [Entity(DBServer="连接名")] 就是那个库，否则是默认库。
+        /// 注意这里按 TEntity 路由，操作其他实体(明细表除外,明细表强制同库)请用 GetClient&lt;T&gt;()，
+        /// 否则会把别的表(尤其是 Sys_* 框架表)当成主表的库来访问
+        /// </summary>
         public virtual ISqlSugarClient DbContext
         {
-            get { return DefaultDbContext.SqlSugarClient; }
+            get { return GetClient<TEntity>(); }
         }
 
         public virtual ISqlSugarClient SqlSugarClient
         {
             get
             {
-                return DefaultDbContext.SqlSugarClient;
+                return GetClient<TEntity>();
             }
         }
+
+        /// <summary>
+        /// 取指定实体所在库的连接(泛型方法里操作非主表实体时用)
+        /// </summary>
+        public ISqlSugarClient GetClient<T>()
+        {
+            return EntityDbRouter.Route(typeof(T), DefaultDbContext.SqlSugarClient);
+        }
+
         private ISugarQueryable<TEntity> DBSet
         {
             get { return BaseDbContext.Set<TEntity>(); }
+        }
+
+        /// <summary>
+        /// 参与事务的连接：主实体被 [Entity(DBServer)] 路由到别的库时，
+        /// 业务库与默认库(Sys_* 框架表、审批流程、审计日志)是两个物理连接，跨库没有分布式事务。
+        /// 这里对涉及到的每个连接各开一个本地事务并一起提交/回滚(链式本地事务)：
+        /// 业务逻辑里任何一步失败两边都会回滚，只有"业务库已提交、默认库提交时进程崩溃"这个
+        /// 极小窗口无法保证原子性，比只在一个连接上开事务、另一个连接静默自动提交安全得多。
+        /// 主子表已在 EntityDbRouter 里强制同库，所以明细表不会再引入第三个连接。
+        /// </summary>
+        private List<ISqlSugarClient> GetTransactionClients()
+        {
+            //业务库放在前面：先提交业务数据再提交日志/流程，避免出现"有流程记录却没有业务数据"
+            var clients = new List<ISqlSugarClient>() { DbContext };
+            var defaultClient = DefaultDbContext.SqlSugarClient;
+            if (!ReferenceEquals(defaultClient, clients[0]))
+            {
+                clients.Add(defaultClient);
+            }
+            return clients;
+        }
+
+        private static void RollbackQuietly(List<ISqlSugarClient> clients)
+        {
+            //回滚失败不能盖掉原始异常
+            for (int i = clients.Count - 1; i >= 0; i--)
+            {
+                try { clients[i].Ado.RollbackTran(); } catch (Exception ex) { Logger.Error(ex.Message); }
+            }
         }
 
         /// <summary>
@@ -70,25 +113,25 @@ namespace VOL.Core.BaseProvider
                 return action();
             }
             WebResponseContent webResponse = new WebResponseContent();
+            var clients = GetTransactionClients();
             try
             {
-                DbContext.Ado.BeginTran();
+                clients.ForEach(x => x.Ado.BeginTran());
 
                 webResponse = action();
                 if (webResponse.Status)
                 {
-                    DbContext.Ado.CommitTran();
+                    clients.ForEach(x => x.Ado.CommitTran());
                 }
                 else
                 {
-                    DbContext.Ado.RollbackTran();
-
+                    RollbackQuietly(clients);
                 }
                 return webResponse;
             }
             catch (Exception ex)
             {
-                DbContext.Ado.RollbackTran();
+                RollbackQuietly(clients);
                 string message = ex.Message + ex?.InnerException + ex?.StackTrace;
                 if (HttpContext.Current.GetService<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>().IsDevelopment())
                 {
@@ -106,25 +149,31 @@ namespace VOL.Core.BaseProvider
                 return await action();
             }
             WebResponseContent webResponse = new WebResponseContent();
+            var clients = GetTransactionClients();
             try
             {
-                await DbContext.Ado.BeginTranAsync();
+                foreach (var client in clients)
+                {
+                    await client.Ado.BeginTranAsync();
+                }
 
                 webResponse = await action();
                 if (webResponse.Status)
                 {
-                    await DbContext.Ado.CommitTranAsync();
+                    foreach (var client in clients)
+                    {
+                        await client.Ado.CommitTranAsync();
+                    }
                 }
                 else
                 {
-                    await DbContext.Ado.RollbackTranAsync();
-
+                    RollbackQuietly(clients);
                 }
                 return webResponse;
             }
             catch (Exception ex)
             {
-                await DbContext.Ado.RollbackTranAsync();
+                RollbackQuietly(clients);
                 string message = ex.Message + ex?.InnerException + ex?.StackTrace;
                 if (HttpContext.Current.GetService<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>().IsDevelopment())
                 {
@@ -304,9 +353,9 @@ namespace VOL.Core.BaseProvider
             {
                 predicate = x => 1 == 1;
             }
-            var _db = DbContext.Set<TFind>();
-            rowcount = returnRowCount ? _db.Count(predicate) : 0;
-            return DbContext.Set<TFind>().Where(predicate)
+            var _client = GetClient<TFind>();
+            rowcount = returnRowCount ? _client.Set<TFind>().Count(predicate) : 0;
+            return _client.Set<TFind>().Where(predicate)
                 .GetISugarQueryableOrderBy(orderBy.GetExpressionToDic())
                 .Skip((pageIndex - 1) * pagesize)
                 .Take(pagesize);
@@ -377,7 +426,9 @@ namespace VOL.Core.BaseProvider
         /// <param name="properties">格式 Expression<Func<entityt, object>> expTree = x => new { x.字段1, x.字段2 };</param>
         public int UpdateRange<TSource>(IEnumerable<TSource> entities, string[] properties, bool saveChanges = false) where TSource : class, new()
         {
-            return DbContext.UpdateRange(entities, properties, saveChanges);
+            //按被更新的实体自己路由：同一个仓储里也会更新到 Sys_* 等其他表，
+            //按TEntity路由会把它们带到业务库去
+            return GetClient<TSource>().UpdateRange(entities, properties, saveChanges);
         }
 
 
@@ -499,6 +550,8 @@ namespace VOL.Core.BaseProvider
                     editCount++;
                 }
             });
+            //明细表与主表强制同库(EntityDbRouter已校验)，这里仍按明细实体路由，语义更清楚
+            var detailClient = GetClient<TDetail>();
             //删除
             if (delNotExist)
             {
@@ -507,7 +560,7 @@ namespace VOL.Core.BaseProvider
                     delCount++;
                     TDetail detail = Activator.CreateInstance<TDetail>();
                     property.SetValue(detail, d);
-                    DbContext.Deleteable<TDetail>(detail).AddQueue();
+                    detailClient.Deleteable<TDetail>(detail).AddQueue();
                     for (int i = 0; i < list.Count(); i++)
                     {
                         if (property.GetValue(list[i]) == d)
@@ -517,43 +570,35 @@ namespace VOL.Core.BaseProvider
                     }
                 });
             }
-            DbContext.Insertable<TDetail>(addList).ExecuteCommand();
+            detailClient.Insertable<TDetail>(addList).ExecuteCommand();
             if (updateDetailFields == null)
             {
-                DbContext.Updateable<TDetail>(updateList).AddQueue();
+                detailClient.Updateable<TDetail>(updateList).AddQueue();
             }
             else
             {
-                DbContext.Updateable<TDetail>(updateList).UpdateColumns(updateDetailFields.GetExpressionToArray<TDetail>()).ExecuteCommand();
+                detailClient.Updateable<TDetail>(updateList).UpdateColumns(updateDetailFields.GetExpressionToArray<TDetail>()).ExecuteCommand();
             }
             return $"修改[{editCount}]条,新增[{addCount}]条,删除[{delCount}]条";
         }
 
         public virtual void Delete(TEntity model, bool saveChanges = false)
         {
-            if (typeof(TEntity).GetSugarSplitTable() != null)
-            {
-                DbContext.Deleteable(model).SplitTable().ExecuteCommand();
-                return;
-            }
-            DbContext.Deleteable(model).AddQueue();
-            if (saveChanges)
-            {
-                DbContext.SaveChanges();
-            }
+            Delete<TEntity>(model, saveChanges);
         }
 
         public virtual void Delete<T>(T model, bool saveChanges) where T : class, new()
         {
+            var client = GetClient<T>();
             if (typeof(T).GetSugarSplitTable() != null)
             {
-                DbContext.Deleteable(model).SplitTable().ExecuteCommand();
+                client.Deleteable(model).SplitTable().ExecuteCommand();
                 return;
             }
-            DbContext.Deleteable(model).AddQueue();
+            client.Deleteable(model).AddQueue();
             if (saveChanges)
             {
-                DbContext.SaveChanges();
+                client.SaveChanges();
             }
         }
         /// <summary>
@@ -598,12 +643,13 @@ namespace VOL.Core.BaseProvider
         }
         public virtual void AddWithSetIdentity<T>(T entity) where T : class, new()
         {
+            var client = GetClient<T>();
             if (typeof(T).GetSugarSplitTable() != null)
             {
-                DbContext.Insertable(entity).SplitTable().ExecuteCommand();
+                client.Insertable(entity).SplitTable().ExecuteCommand();
                 return;
             }
-            DbContext.Insertable(entity).ExecuteReturnEntity();
+            client.Insertable(entity).ExecuteReturnEntity();
         }
         public virtual void Add(TEntity entities, bool saveChanges = false)
         {
@@ -612,8 +658,9 @@ namespace VOL.Core.BaseProvider
 
         public virtual void Add<T>(T entities, bool saveChanges = false) where T : class, new()
         {
-            DbContext.Insertable(entities).AddQueue();
-            if (saveChanges) DbContext.SaveChanges();
+            var client = GetClient<T>();
+            client.Insertable(entities).AddQueue();
+            if (saveChanges) client.SaveChanges();
         }
 
         public virtual void AddRange(List<TEntity> entities, bool saveChanges = false)
@@ -639,23 +686,39 @@ namespace VOL.Core.BaseProvider
                     }
                 }
             }
+            var client = GetClient<T>();
             if (typeof(T).GetSugarSplitTable() != null)
             {
-                DbContext.Insertable(entities).SplitTable().ExecuteCommand();
+                client.Insertable(entities).SplitTable().ExecuteCommand();
                 return;
             }
-            DbContext.Insertable(entities).AddQueue();
-            if (saveChanges) DbContext.SaveChanges();
+            client.Insertable(entities).AddQueue();
+            if (saveChanges) client.SaveChanges();
         }
 
         public virtual int SaveChanges()
         {
-            return BaseDbContext.SaveChanges();
+            //AddQueue的队列是挂在具体连接上的，必须由排队的那个连接提交：
+            //主实体在业务库时要提交业务库的队列，同一次请求里可能还往默认库(Sys_*等)排了队，
+            //所以两个连接都要提交，否则会出现"接口返回成功但数据没进库"
+            int count = DbContext.SaveChanges();
+            var defaultClient = DefaultDbContext.SqlSugarClient;
+            if (!ReferenceEquals(defaultClient, DbContext) && defaultClient.Queues.Count > 0)
+            {
+                count += defaultClient.SaveChanges();
+            }
+            return count;
         }
 
-        public virtual Task<int> SaveChangesAsync()
+        public virtual async Task<int> SaveChangesAsync()
         {
-            return BaseDbContext.SqlSugarClient.SaveChangesAsync();
+            int count = await DbContext.SaveChangesAsync();
+            var defaultClient = DefaultDbContext.SqlSugarClient;
+            if (!ReferenceEquals(defaultClient, DbContext) && defaultClient.Queues.Count > 0)
+            {
+                count += await defaultClient.SaveChangesAsync();
+            }
+            return count;
         }
 
         public virtual int ExecuteSqlCommand(string sql, params SugarParameter[] SugarParameters)

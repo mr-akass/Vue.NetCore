@@ -4,6 +4,11 @@
 // }
 let viewgird = [
   {
+    path: '/Sys_Language',
+    name: 'Sys_Language',
+    component: () => import('@/views/sys/lang/Sys_Language.vue')
+  },
+  {
     path: '/Sys_Log',
     name: 'sys_Log',
     component: () => import('@/views/sys/system/Sys_Log.vue')
@@ -28,6 +33,16 @@ let viewgird = [
     path: '/Sys_Role',
     name: 'Sys_Role',
     component: () => import('@/views/sys/system/Sys_Role.vue')
+  },
+  {
+    path: '/Sys_Application', //应用/子系统管理(多应用支持)
+    name: 'Sys_Application',
+    component: () => import('@/views/sys/system/Sys_Application.vue')
+  },
+  {
+    path: '/Sys_DbConnection', //数据库管理(多数据库支持,只增不删)
+    name: 'Sys_DbConnection',
+    component: () => import('@/views/sys/system/Sys_DbConnection.vue')
   },
   {
     path: '/FormDesignOptions',
@@ -207,7 +222,15 @@ let viewgird = [
     path: '/TestService',
     name: 'TestService',
     component: () => import('@/views/mes/mes/TestService.vue')
-  }]
+  }    ,{
+        path: '/Ren',
+        name: 'Ren',
+        component: () => import('@/views/sys/ren/Ren.vue')
+    }      ,{
+        path: '/Sys_Area',
+        name: 'Sys_Area',
+        component: () => import('@/views/sys/sys_area/Sys_Area.vue')
+    }]
 
 //上面的demo、MES开头的都是示例菜单，可以任意删除 
 export default viewgird

@@ -19,7 +19,7 @@ export const initPaginations = (paginations) => {
   paginations.size = paginations.size || 30;
   paginations.rows = paginations.size;
   paginations.page = paginations.page || 1;
-  paginations.wheres = paginations.wheres || 30;
+  paginations.wheres = paginations.wheres || [];
 };
 export const getColumnFilters = (proxy, column, tableData) => {
   let arr = [];
@@ -57,6 +57,48 @@ export const filterChildrenColumn = (children) => {
 
 export const initColumnDisabled = (row, column) => {
   return column.getDisabled && column.getDisabled(row, column);
+};
+
+/**
+ * 快捷复制的文本：取单元格显示出来的内容(字典列取字典文本、日期列取格式化后的值)，
+ * 而不是row上的原始值——用户复制的是看到的东西，字典列复制出一个key没有意义
+ */
+export const getQuickCopyText = (proxy, row, column) => {
+  let text = cellFormatter(proxy, row, column, true);
+  if (text === null || text === undefined || text === "") {
+    text = row[column.field];
+  }
+  if (Array.isArray(text)) {
+    text = text.join(",");
+  }
+  return text === null || text === undefined ? "" : text + "";
+};
+//值为空的单元格不显示复制图标(空白处多一个图标只会误点)
+export const hasQuickCopyText = (proxy, row, column) => {
+  return getQuickCopyText(proxy, row, column).trim() !== "";
+};
+export const quickCopyCell = async (proxy, row, column) => {
+  const text = getQuickCopyText(proxy, row, column);
+  try {
+    //http(非localhost)下navigator.clipboard不可用，退回execCommand
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    //值可能很长，提示里只显示前30个字符，避免提示框占满屏幕
+    const tip = text.length > 30 ? text.substr(0, 30) + "..." : text;
+    proxy.$message.success(`【${tip}】${proxy.$ts("已复制")}`);
+  } catch {
+    proxy.$message.error(proxy.$ts("复制失败，请手动复制"));
+  }
 };
 
 export const initDrag = (

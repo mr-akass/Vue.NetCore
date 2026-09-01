@@ -1,6 +1,8 @@
 <template>
   <div class="home-container">
-    <el-scrollbar style="height: 100%">
+    <!-- 多应用支持：当前应用配置了首页面板(DataPanel)时显示定制首页，否则显示默认首页 -->
+    <component v-if="currentDataPanel" :is="currentDataPanel"></component>
+    <el-scrollbar v-else style="height: 100%">
       <div class="home-content">
         <div class="home-left">
           <div>
@@ -11,6 +13,8 @@
               title="2026.05后台代码、前端代码生成器全新版本发布;增加了大量功能、优化了框架扩展性，具体见gitee中的更新说明"
             ></el-alert>
           </div>
+          <!-- 快捷导航：按用户菜单权限收藏常用页面，可拖动排序/删除 -->
+          <home-shortcut></home-shortcut>
           <div class="home-list">
             <div class="list-item" v-for="(item, index) in list" :key="index">
               <div class="content">
@@ -121,9 +125,30 @@ import {
   toRefs,
   getCurrentInstance,
   onMounted,
-  onUnmounted
+  onUnmounted,
+  shallowRef,
+  defineAsyncComponent,
+  watch
 } from 'vue'
 import * as echarts from 'echarts'
+import store from '@/store/index'
+import HomeShortcut from './home/HomeShortcut.vue'
+
+//多应用支持：按当前应用的DataPanel字段动态加载定制首页组件(src/views/home/{DataPanel}.vue)
+const currentDataPanel = shallowRef(null)
+const applyDataPanel = () => {
+  const appConfig = store.getters.getAppConfig()
+  const panelName = appConfig?.dataPanel
+  if (panelName) {
+    currentDataPanel.value = defineAsyncComponent(() => import(`./home/${panelName}.vue`))
+  } else {
+    currentDataPanel.value = null
+  }
+}
+store.dispatch('initAppList').then(() => {
+  applyDataPanel()
+})
+applyDataPanel()
 
 const msg = ref([
   { name: '健身房突然倒闭，会员们的钱该如何追回？' },
@@ -166,11 +191,17 @@ const radioValue = ref('本月')
 const radioValue2 = ref('')
 
 onMounted(() => {
-  let $chart = echarts.init(document.getElementById('h-chart1'))
-  console.log(getChartData())
-  $chart.setOption(getChartData())
-  let $pie = echarts.init(document.getElementById('chart-pie'))
-  $pie.setOption(chartPie())
+  //定制首页面板模式下默认图表DOM不存在，跳过初始化
+  const chartEl = document.getElementById('h-chart1')
+  if (chartEl) {
+    let $chart = echarts.init(chartEl)
+    $chart.setOption(getChartData())
+  }
+  const pieEl = document.getElementById('chart-pie')
+  if (pieEl) {
+    let $pie = echarts.init(pieEl)
+    $pie.setOption(chartPie())
+  }
 })
 
 const { proxy } = getCurrentInstance()

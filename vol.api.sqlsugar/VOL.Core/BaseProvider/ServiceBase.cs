@@ -17,6 +17,14 @@ using CC = VOL.Core.CacheManager;
 
 namespace VOL.Core.BaseProvider
 {
+    /// <summary>
+    /// 表头筛选日期列去重查询的投影对象(生成列别名用)
+    /// </summary>
+    public class ColumnDistinctDateRow
+    {
+        public DateTime value { get; set; }
+    }
+
     public abstract class ServiceBase<TEntity, TRepository> : ApplicationServiceBase<TEntity, TRepository>
             where TEntity : BaseEntity, new()
             where TRepository : IRepository<TEntity>
@@ -94,6 +102,97 @@ namespace VOL.Core.BaseProvider
                 await GetPageDataOnExecutedAsync.Invoke(pageGridData);
             }
             return pageGridData;
+        }
+        /// <summary>
+        /// 表头筛选：分页获取指定列去重后的值(2026.07.29)
+        /// 列配置filterData:true后，表头筛选弹窗通过此方法分批加载选项
+        /// </summary>
+        /// <param name="options"></param>
+        /// <returns></returns>
+        public virtual async Task<object> GetColumnDistinctValuesAsync(ColumnDistinctValueOptions options)
+        {
+            if (string.IsNullOrWhiteSpace(options?.ColumnName))
+            {
+                return new { status = false, message = "列名不能为空" };
+            }
+            //列名必须是实体的属性，防止sql注入
+            PropertyInfo property = typeof(TEntity).GetProperties()
+                .FirstOrDefault(x => x.Name.Equals(options.ColumnName, StringComparison.OrdinalIgnoreCase));
+            if (property == null)
+            {
+                return new { status = false, message = $"表[{typeof(TEntity).Name}]不存在列[{options.ColumnName}]" };
+            }
+            int page = options.Page <= 0 ? 1 : options.Page;
+            int pageSize = options.PageSize <= 0 ? 30 : (options.PageSize > 200 ? 200 : options.PageSize);
+
+            //与getPageData相同的基础过滤(数据权限、多租户、逻辑删除)
+            var (queryable, _) = new PageDataOptions().BuildPageDataQuery(this, IsMultiTenancy);
+
+            //日期类型按天去重(筛选粒度到年月日)，返回yyyy-MM-dd格式，
+            //后端in查询时日期格式的值按天区间匹配，见LambdaExtensions.GetDateRangeInExpression
+            if ((Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType) == typeof(DateTime))
+            {
+                return await QueryDateColumnDistinctValues(queryable, property, page, pageSize);
+            }
+
+            var method = typeof(ServiceBase<TEntity, TRepository>)
+                .GetMethod(nameof(QueryColumnDistinctValues), BindingFlags.Instance | BindingFlags.NonPublic)
+                .MakeGenericMethod(property.PropertyType);
+            return await (Task<object>)method.Invoke(this, [queryable, property, page, pageSize]);
+        }
+
+        private async Task<object> QueryDateColumnDistinctValues(ISugarQueryable<TEntity> queryable, PropertyInfo property, int page, int pageSize)
+        {
+            ParameterExpression parameter = typeof(TEntity).GetExpressionParameter();
+            MemberExpression memberExp = Expression.Property(parameter, property);
+            Expression dateExp;
+            if (Nullable.GetUnderlyingType(property.PropertyType) != null)
+            {
+                var notNull = Expression.Lambda<Func<TEntity, bool>>(
+                    Expression.NotEqual(memberExp, Expression.Constant(null, property.PropertyType)), parameter);
+                queryable = queryable.Where(notNull);
+                dateExp = Expression.Property(Expression.Property(memberExp, "Value"), "Date");
+            }
+            else
+            {
+                dateExp = Expression.Property(memberExp, "Date");
+            }
+            var groupExp = Expression.Lambda<Func<TEntity, object>>(Expression.Convert(dateExp, typeof(object)), parameter);
+            //投影到带属性名的对象，cast表达式生成列别名后count子查询才有列名
+            var selectExp = Expression.Lambda<Func<TEntity, ColumnDistinctDateRow>>(
+                Expression.MemberInit(
+                    Expression.New(typeof(ColumnDistinctDateRow)),
+                    Expression.Bind(typeof(ColumnDistinctDateRow).GetProperty(nameof(ColumnDistinctDateRow.value)), dateExp)),
+                parameter);
+            RefAsync<int> total = new RefAsync<int>();
+            List<ColumnDistinctDateRow> rows = await queryable
+                .GroupBy(groupExp)
+                .OrderBy(groupExp)
+                .Select(selectExp)
+                .ToPageListAsync(page, pageSize, total);
+            return new { status = true, rows = rows.Select(x => x.value.ToString("yyyy-MM-dd")).ToList(), total = total.Value };
+        }
+
+        private async Task<object> QueryColumnDistinctValues<TKey>(ISugarQueryable<TEntity> queryable, PropertyInfo property, int page, int pageSize)
+        {
+            Type propertyType = property.PropertyType;
+            //引用类型与可空类型过滤null值
+            if (!propertyType.IsValueType || Nullable.GetUnderlyingType(propertyType) != null)
+            {
+                ParameterExpression parameter = typeof(TEntity).GetExpressionParameter();
+                var notNull = Expression.Lambda<Func<TEntity, bool>>(
+                    Expression.NotEqual(Expression.Property(parameter, property), Expression.Constant(null, propertyType)),
+                    parameter);
+                queryable = queryable.Where(notNull);
+            }
+            //group by去重后分页，总数由sqlsugar包装子查询计算
+            RefAsync<int> total = new RefAsync<int>();
+            List<TKey> rows = await queryable
+                .GroupBy(property.Name.GetExpression<TEntity>())
+                .OrderBy(property.Name.GetExpression<TEntity>())
+                .Select(property.Name.GetExpression<TEntity, TKey>())
+                .ToPageListAsync(page, pageSize, total);
+            return new { status = true, rows, total = total.Value };
         }
         public virtual object GetDetailPage(PageDataOptions pageData)
         {

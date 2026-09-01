@@ -122,6 +122,7 @@ const TAB_VISIBLE_FIELDS = {
     "isDisplay",
     "columnWidth",
     "headerFilter",
+    "quickCopy",
     "summaryType",
     "isUnique",
     "textAlign",

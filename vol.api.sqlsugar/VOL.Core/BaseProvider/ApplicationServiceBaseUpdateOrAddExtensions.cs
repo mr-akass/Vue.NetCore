@@ -385,7 +385,7 @@ namespace VOL.Core.BaseProvider
             if (entityData.UpdateList == null || entityData.UpdateList.Count == 0) return;
             DetailTypedMethods.First(m => m.Name == nameof(UpdateDetailTyped) && m.IsGenericMethodDefinition)
                 .MakeGenericMethod(detailType)
-                .Invoke(null, [entityData, dbContext.SqlSugarClient]);
+                .Invoke(null, [entityData, EntityDbRouter.Route(detailType, dbContext.SqlSugarClient)]);
         }
         private static void UpdateDetailTyped<T>(EntityData entityData, ISqlSugarClient sqlSugarClient) where T : class, new()
         {
@@ -400,7 +400,7 @@ namespace VOL.Core.BaseProvider
             if (entityData.UpdateList == null || entityData.UpdateList.Count == 0) return 0;
             return await (DetailTypedMethods.First(m => m.Name == nameof(UpdateDetailTypedAsync) && m.IsGenericMethodDefinition)
                 .MakeGenericMethod(detailType)
-                .Invoke(null, [entityData, dbContext.SqlSugarClient]) as Task<int>);
+                .Invoke(null, [entityData, EntityDbRouter.Route(detailType, dbContext.SqlSugarClient)]) as Task<int>);
         }
 
 
@@ -440,7 +440,7 @@ namespace VOL.Core.BaseProvider
             //非自增直接保存
             if (!isIdentit)
             {
-                dbContext.SqlSugarClient.Insertable<T>(list).ExecuteCommand();
+                dbContext.GetClient<T>().Insertable<T>(list).ExecuteCommand();
             }
             foreach (var entity in list)
             {
@@ -456,7 +456,7 @@ namespace VOL.Core.BaseProvider
             //非自增直接保存
             if (!isIdentit)
             {
-                await dbContext.SqlSugarClient.Insertable<T>(list).ExecuteCommandAsync();
+                await dbContext.GetClient<T>().Insertable<T>(list).ExecuteCommandAsync();
             }
 
             foreach (var entity in list)
@@ -478,7 +478,7 @@ namespace VOL.Core.BaseProvider
         {
             if (insertMainData)
             {
-                dbContext.SqlSugarClient.AddWithSetIdentity(mainEntity, true);
+                dbContext.GetClient<T>().AddWithSetIdentity(mainEntity, true);
             }
             Type[] detailTypes = GetDetailTypes<T>();
             foreach (Type detailType in detailTypes)
@@ -499,7 +499,7 @@ namespace VOL.Core.BaseProvider
         {
             if (insertMainData)
             {
-                dbContext.SqlSugarClient.AddWithSetIdentity(mainEntity, true);
+                dbContext.GetClient<T>().AddWithSetIdentity(mainEntity, true);
             }
             Type[] detailTypes = GetDetailTypes<T>();
             foreach (Type detailType in detailTypes)
@@ -517,7 +517,7 @@ namespace VOL.Core.BaseProvider
             List<TDetail> list = GetDetails<TMain, TDetail>(mainEntity);
             if (list == null || list.Count == 0) return true;
 
-            var sugarClient = dbContext.SqlSugarClient;
+            var sugarClient = dbContext.GetClient<TDetail>();
             PropertyInfo detailKeyProp = typeof(TDetail).GetKeyProperty();
             if (IsIdentityType(detailKeyProp))
             {
@@ -546,7 +546,7 @@ namespace VOL.Core.BaseProvider
             List<TDetail> list = GetDetails<TMain, TDetail>(mainEntity);
             if (list == null || list.Count == 0) return;
 
-            var sugarClient = dbContext.SqlSugarClient;
+            var sugarClient = dbContext.GetClient<TDetail>();
             PropertyInfo detailKeyProp = typeof(TDetail).GetKeyProperty();
             if (IsIdentityType(detailKeyProp))
             {

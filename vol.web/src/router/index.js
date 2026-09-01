@@ -2,6 +2,7 @@ import { createRouter, createWebHistory, createWebHashHistory } from 'vue-router
 import viewgird from './viewGird'
 import store from '../store/index'
 import redirect from './redirect'
+import { getSavedAppId } from '@/config/appConfig'
 const routes = [
   {
     path: '/',
@@ -67,6 +68,14 @@ const routes = [
     meta:{
         anonymous:true
       }
+  },
+  {
+    path: '/guide', //子系统(应用)选择页
+    name: 'guide',
+    component: () => import('@/views/Guide.vue'),
+    meta: {
+      requiresApp: false //标记此页面不需要已选应用
+    }
   }
 ]
 
@@ -80,7 +89,22 @@ router.beforeEach((to, from, next) => {
   if (to.matched.length == 0) return next({ path: '/404' });
   //2020.06.03增加路由切换时加载提示
   store.dispatch("onLoading", true);
-  if ((to.hasOwnProperty('meta') && to.meta.anonymous) || store.getters.isLogin() || to.path == '/login') {
+
+  //多应用支持：非超管已登录但未选择应用时，强制跳转到应用选择页(/guide)
+  const isAnonymous = to.hasOwnProperty('meta') && to.meta.anonymous;
+  const requiresApp = !(to.meta && to.meta.requiresApp === false) && !isAnonymous;
+  if (requiresApp && to.path !== '/login' && store.getters.isLogin()) {
+    let isSuperAdmin = false;
+    try {
+      const userInfo = store.getters.getUserInfo();
+      isSuperAdmin = !!(userInfo && userInfo.isSuperAdmin);
+    } catch (e) { /* ignore */ }
+    if (!isSuperAdmin && !getSavedAppId()) {
+      return next({ path: '/guide' });
+    }
+  }
+
+  if (isAnonymous || store.getters.isLogin() || to.path == '/login') {
     return next();
   }
 

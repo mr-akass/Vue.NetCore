@@ -12,10 +12,14 @@ namespace VOL.Sys.Controllers
 {
     public partial class Sys_MenuController
     {
+        /// <summary>
+        /// 获取当前用户的菜单树(多应用支持：传appId按应用过滤并隐藏应用同名一级菜单；超级管理员不过滤)
+        /// </summary>
+        /// <param name="appId">应用ID(可选)</param>
         [HttpGet, HttpPost, Route("getTreeMenu")]
-        public IActionResult GetTreeMenu()
+        public IActionResult GetTreeMenu(int? appId = null)
         {
-            var menu = _service.GetCurrentMenuActionList();
+            var menu = _service.GetCurrentMenuActionListByAppId(appId);
             return Json(new
             {
                 menu,

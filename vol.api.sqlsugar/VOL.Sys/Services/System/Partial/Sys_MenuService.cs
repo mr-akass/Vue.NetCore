@@ -118,12 +118,164 @@ namespace VOL.Sys.Services
         }
 
         /// <summary>
-        /// 获取当前用户所有菜单与权限
+        /// 获取当前用户所有菜单与权限(多角色权限并集)
         /// </summary>
         /// <returns></returns>
         public object GetCurrentMenuActionList()
         {
-            return GetMenuActionList(UserContext.Current.RoleId);
+            if (UserContext.Current.IsSuperAdmin)
+            {
+                return GetMenuActionList(1);
+            }
+            return GetMenuActionList(UserContext.Current.RoleIds, null);
+        }
+
+        /// <summary>
+        /// 按应用获取当前用户的菜单与权限(多应用支持)
+        /// 应用的菜单范围=RootMenuIds绑定的多个一级菜单子树的并集(未绑定时回退按AppName同名匹配)；
+        /// 所有根菜单被隐藏、其子菜单提升为一级；范围外的菜单即使角色误配了权限也不会显示。
+        /// 公共子树可同时绑定到多个应用实现菜单共享，同一菜单在不同应用中的按钮权限按该应用下的角色分别计算。
+        /// 超级管理员：不传appId=全量菜单；传appId=以该应用子树视角查看(拥有子树内全部权限)
+        /// </summary>
+        /// <param name="appId">应用ID(Sys_Application.AppID)</param>
+        /// <returns></returns>
+        public object GetCurrentMenuActionListByAppId(int? appId)
+        {
+            bool isSuperAdmin = UserContext.Current.IsSuperAdmin;
+            //未选择应用：超管看全量菜单，普通用户返回空菜单防止泄露
+            if (!appId.HasValue)
+            {
+                return isSuperAdmin ? GetMenuActionList(1) : new List<object>();
+            }
+
+            var app = Repositories.Sys_ApplicationRepository.Instance.FindFirst(x => x.AppID == appId.Value);
+            if (app == null)
+            {
+                return isSuperAdmin ? GetMenuActionList(1) : new List<object>();
+            }
+
+            var allMenus = GetAllMenu().Where(c => c.MenuType == UserContext.MenuType).ToList();
+
+            //确定应用的根菜单集合：优先RootMenuIds显式绑定(逗号分隔多个)，未绑定回退AppName同名一级菜单(兼容旧约定)
+            var rootMenuIds = new List<int>();
+            if (!string.IsNullOrWhiteSpace(app.RootMenuIds))
+            {
+                rootMenuIds = app.RootMenuIds.Split(new[] { ',', '，' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x => x.Trim().GetInt())
+                    .Where(x => x > 0)
+                    .Distinct()
+                    .ToList();
+            }
+            if (rootMenuIds.Count == 0 && !string.IsNullOrEmpty(app.AppName))
+            {
+                var sameNameMenu = allMenus.FirstOrDefault(m => m.ParentId == 0 &&
+                    string.Equals(m.MenuName, app.AppName, StringComparison.OrdinalIgnoreCase));
+                if (sameNameMenu != null)
+                {
+                    rootMenuIds.Add(sameNameMenu.Menu_Id);
+                }
+            }
+
+            //应用的菜单范围=所有根菜单子树的并集(圈定范围，防止跨应用权限混入)
+            HashSet<int> rootIdSet = rootMenuIds.Count > 0 ? new HashSet<int>(rootMenuIds) : null;
+            HashSet<int> subTreeIds = null;
+            if (rootMenuIds.Count > 0)
+            {
+                subTreeIds = new HashSet<int>();
+                foreach (var rootId in rootMenuIds)
+                {
+                    foreach (var id in GetMenuSubTreeIds(allMenus, rootId))
+                    {
+                        subTreeIds.Add(id);
+                    }
+                }
+            }
+
+            if (isSuperAdmin)
+            {
+                //超管以子系统视角查看：子树内全部菜单与按钮权限
+                return allMenus
+                    .Where(x => subTreeIds == null || subTreeIds.Contains(x.Menu_Id))
+                    .Where(x => rootIdSet == null || !rootIdSet.Contains(x.Menu_Id))
+                    .OrderByDescending(x => x.OrderNo)
+                    .Select(x => new
+                    {
+                        id = x.Menu_Id,
+                        name = x.MenuName,
+                        url = x.Url,
+                        parentId = (rootIdSet != null && rootIdSet.Contains(x.ParentId)) ? 0 : x.ParentId,
+                        icon = x.Icon,
+                        x.Enable,
+                        x.TableName,
+                        permission = x.Actions.Select(s => s.Value).ToArray()
+                    }).ToList<object>();
+            }
+
+            //普通用户：将角色缩小到该应用下的角色
+            int[] filteredRoleIds = Sys_RoleService.Instance.GetRoleIdsByAppId(UserContext.Current.RoleIds, appId.Value);
+            if (filteredRoleIds == null || filteredRoleIds.Length == 0)
+            {
+                return new List<object>();
+            }
+
+            return GetMenuActionList(filteredRoleIds, rootIdSet, subTreeIds);
+        }
+
+        /// <summary>
+        /// 获取指定一级菜单的整棵子树菜单ID(含根)
+        /// </summary>
+        private HashSet<int> GetMenuSubTreeIds(List<Sys_Menu> allMenus, int rootMenuId)
+        {
+            var ids = new HashSet<int>() { rootMenuId };
+            bool added = true;
+            while (added)
+            {
+                added = false;
+                foreach (var m in allMenus)
+                {
+                    if (!ids.Contains(m.Menu_Id) && ids.Contains(m.ParentId))
+                    {
+                        ids.Add(m.Menu_Id);
+                        added = true;
+                    }
+                }
+            }
+            return ids;
+        }
+
+        /// <summary>
+        /// 根据多个角色获取菜单与权限(权限并集)
+        /// </summary>
+        /// <param name="roleIds"></param>
+        /// <param name="rootMenuIds">要隐藏的应用根菜单ID集合(其子菜单parentId置0提升为一级)</param>
+        /// <param name="subTreeIds">应用的菜单范围(为null不限制)</param>
+        /// <returns></returns>
+        public object GetMenuActionList(int[] roleIds, HashSet<int> rootMenuIds = null, HashSet<int> subTreeIds = null)
+        {
+            if (roleIds != null && roleIds.Any(x => UserContext.IsRoleIdSuperAdmin(x)))
+            {
+                return GetMenuActionList(1);
+            }
+
+            var allMenus = GetAllMenu().Where(c => c.MenuType == UserContext.MenuType).ToList();
+
+            var menu = from a in UserContext.Current.GetPermissions(roleIds)
+                       join b in allMenus on a.Menu_Id equals b.Menu_Id
+                       where (subTreeIds == null || subTreeIds.Contains(b.Menu_Id))
+                          && (rootMenuIds == null || !rootMenuIds.Contains(b.Menu_Id))
+                       orderby b.OrderNo descending
+                       select new
+                       {
+                           id = a.Menu_Id,
+                           name = b.MenuName,
+                           url = b.Url,
+                           parentId = (rootMenuIds != null && rootMenuIds.Contains(b.ParentId)) ? 0 : b.ParentId,
+                           icon = b.Icon,
+                           b.Enable,
+                           b.TableName, // 2022.03.26增移动端加菜单类型
+                           permission = a.UserAuthArr
+                       };
+            return menu.ToList();
         }
 
         /// <summary>
@@ -151,22 +303,7 @@ namespace VOL.Sys.Services
                 }).ToList();
             }
 
-            var menu = from a in UserContext.Current.Permissions
-                       join b in GetAllMenu().Where(c => c.MenuType == UserContext.MenuType)
-                       on a.Menu_Id equals b.Menu_Id
-                       orderby b.OrderNo descending
-                       select new
-                       {
-                           id = a.Menu_Id,
-                           name = b.MenuName,
-                           url = b.Url,
-                           parentId = b.ParentId,
-                           icon = b.Icon,
-                           b.Enable,
-                           b.TableName, // 2022.03.26增移动端加菜单类型
-                           permission = a.UserAuthArr
-                       };
-            return menu.ToList();
+            return GetMenuActionList(new int[] { roleId }, null);
         }
 
         /// <summary>

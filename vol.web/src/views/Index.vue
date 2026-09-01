@@ -72,9 +72,10 @@
          
         </div>
         <div class="header-info">
-          <!-- <div class="h-link" style="margin-right: 10px">
+          <!-- 多语言切换(main.js中$global.lang=true时显示) -->
+          <div class="h-link" style="margin-right: 10px">
             <lang :color="color"></lang>
-          </div> -->
+          </div>
           <div class="h-link">
             <vol-menu-filter :on-select="onSelect"></vol-menu-filter>
           </div>
@@ -165,6 +166,7 @@ import Message from './index/Message.vue'
 import IndexDataConfig from './index/IndexDataConfig.js'
 import IndexTabs from './index/IndexTabs.js'
 import HomeSetting from './index/Setting.vue'
+import lang from '@/components/lang/lang'
 import inintMenu, { registerTopNav } from './index/IndexMethods.js'
 import IndexRouterView from './index/IndexRouterView'
 
@@ -235,6 +237,13 @@ links.value.push(...[{
 const userDropItems = reactive([
   { text: '消息管理', icon: 'el-icon-bell', hidden: true },
   { text: '个人中心', path: '/userInfo', icon: 'el-icon-user' },
+  {
+    text: '切换应用', //多应用支持：回到子系统选择页
+    icon: 'el-icon-link',
+    click: () => {
+      router.push({ path: '/guide' })
+    }
+  },
   {
     text: '基础设置',
     icon: 'el-icon-setting',

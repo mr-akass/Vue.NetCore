@@ -13,6 +13,14 @@ import {
 } from './ViewGridEventButton.jsx'
 import debounce from '../VolDebounce/index.js'
 import action from './Action.js'
+import {
+  isEditTable,
+  snapshotEditTableRows,
+  canBeginEditRow,
+  editTableAddRow,
+  editTableBeginEdit,
+  editTableDelete
+} from './ViewGridEditTable.js'
 export default (proxy, props, ctx, dataConfig) => {
   proxy.const = action;
   const loadTableBefore = async (param, callBack) => {
@@ -58,6 +66,8 @@ export default (proxy, props, ctx, dataConfig) => {
     if (status) {
       status = await props.searchAfter(data, result)
     }
+    //行内编辑模式：记录快照用于保存时比对修改过的行
+    snapshotEditTableRows(props, dataConfig, data)
     if (dataConfig.isBoxAudit.value && data.length) {
       dataConfig.isBoxAudit.value = false
       auditTabelOnClick(proxy, props, dataConfig, data[0])
@@ -105,6 +115,10 @@ export default (proxy, props, ctx, dataConfig) => {
   }
   //表格编辑
   const tableBeginEdit = (row, column, index) => {
+    //行内编辑模式：按新建/编辑权限控制是否可编辑
+    if (!canBeginEditRow(props, dataConfig, row)) {
+      return false
+    }
     if (!proxy.beginEdit.call(proxy, row, column, index)) {
       return false
     }
@@ -170,9 +184,17 @@ export default (proxy, props, ctx, dataConfig) => {
 
   //新建
   const add = async () => {
+    //行内编辑模式：表格内直接插入编辑行
+    if (isEditTable(props)) {
+      return editTableAddRow(proxy, props, dataConfig)
+    }
     onAdd(proxy, props, dataConfig)
   }
   const edit = async (rows) => {
+    //行内编辑模式：开启选中行的行内编辑
+    if (isEditTable(props)) {
+      return editTableBeginEdit(proxy, props, rows)
+    }
     onEdit(proxy, props, dataConfig, rows)
   }
   const linkData = async (row, column) => {
@@ -180,6 +202,12 @@ export default (proxy, props, ctx, dataConfig) => {
   }
   //删除
   const del = async (rows) => {
+    //行内编辑模式：未保存的新行本地移除，已保存的走删除接口
+    if (isEditTable(props)) {
+      return editTableDelete(proxy, props, rows, (persisted) => {
+        onDelete(proxy, props, persisted, dataConfig)
+      })
+    }
     onDelete(proxy, props, rows, dataConfig)
   }
 

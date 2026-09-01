@@ -157,6 +157,44 @@ namespace VOL.Sys.Services
             return GetAllChildren(roleId).Select(x => x.Id).ToList();
         }
 
+        /// <summary>
+        /// 根据用户的角色获取对应的应用AppId列表(多应用支持，AppID=0的角色不计入)
+        /// </summary>
+        /// <param name="roleIds">用户的角色ID数组</param>
+        /// <returns>去重后的AppId列表</returns>
+        public List<int> GetAppIdsByRoleIds(int[] roleIds)
+        {
+            if (roleIds == null || roleIds.Length == 0)
+            {
+                return new List<int>();
+            }
+
+            return repository.FindAsIQueryable(x => roleIds.Contains(x.Role_Id) && x.AppID > 0)
+                .Select(x => x.AppID)
+                .ToList()
+                .Distinct()
+                .ToList();
+        }
+
+        /// <summary>
+        /// 获取用户在指定应用下的角色ID列表(多应用支持)
+        /// </summary>
+        /// <param name="roleIds">用户的所有角色ID</param>
+        /// <param name="appId">应用ID</param>
+        /// <returns>该应用下的角色ID列表</returns>
+        public int[] GetRoleIdsByAppId(int[] roleIds, int appId)
+        {
+            if (roleIds == null || roleIds.Length == 0)
+            {
+                return Array.Empty<int>();
+            }
+
+            return repository.FindAsIQueryable(x => roleIds.Contains(x.Role_Id) && x.AppID == appId)
+                .Select(x => x.Role_Id)
+                .ToList()
+                .ToArray();
+        }
+
         private List<RoleNodes> GetAllChildrenNodes(int roleId)
         {
             return RoleContext.GetAllChildren(roleId);
@@ -316,6 +354,8 @@ namespace VOL.Sys.Services
 
         public override WebResponseContent Update(SaveModel saveModel)
         {
+            int appId = 0;
+            List<int> allChildrenRoleIds = new List<int>();
             UpdateOnExecuting = (Sys_Role role, object obj1, object obj2, List<object> obj3) =>
             {
                 //2020.05.07新增禁止选择上级角色为自己
@@ -331,6 +371,9 @@ namespace VOL.Sys.Services
                 {
                     return _responseContent.Error($"不能选择此上级角色，选择的上级角色与当前角色形成依赖关系");
                 }
+                //多应用支持：记录所属应用，保存后级联到所有子角色
+                appId = role.AppID;
+                allChildrenRoleIds = GetAllChildrenRoleId(role.Role_Id);
                 if (!UserContext.Current.IsSuperAdmin)
                 {
                     var roleIds = RoleContext.GetAllChildrenIds(UserContext.Current.RoleId);
@@ -348,6 +391,20 @@ namespace VOL.Sys.Services
                     return _responseContent.OK("");
                 }
                 return ValidateRoleName(role, x => x.RoleName == role.RoleName && x.Role_Id != role.Role_Id);
+            };
+            //多应用支持：所属应用变更时级联更新所有子角色的AppID(子角色跟随父角色所属应用)
+            UpdateOnExecuted = (Sys_Role role, object addList, object updateList, List<object> delKeys) =>
+            {
+                if (allChildrenRoleIds.Count > 0)
+                {
+                    var allChildrenRoleList = repository.Find(x => allChildrenRoleIds.Contains(x.Role_Id) && x.AppID != appId);
+                    if (allChildrenRoleList.Count > 0)
+                    {
+                        allChildrenRoleList.ForEach(x => x.AppID = appId);
+                        repository.UpdateRange(allChildrenRoleList, x => new { x.AppID }, true);
+                    }
+                }
+                return _responseContent.OK();
             };
             return RemoveCache(base.Update(saveModel));
         }

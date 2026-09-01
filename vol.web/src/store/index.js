@@ -1,4 +1,14 @@
 import { createStore } from 'vuex'
+import {
+  APP_LIST_KEY,
+  DEFAULT_APP_ID,
+  fetchAppList,
+  getAppById,
+  getDefaultApp,
+  isValidAppId,
+  getSavedAppId,
+  saveAppId
+} from '@/config/appConfig'
 const keys = { USER: 'user' }
 function getUserInfo(state) {
   if (state.userInfo) return state.userInfo
@@ -10,6 +20,15 @@ function getUserInfo(state) {
   }
   return state.userInfo || {}
 }
+//从 localStorage 加载应用列表缓存
+function loadAppListCache() {
+  try {
+    const cached = localStorage.getItem(APP_LIST_KEY)
+    return cached ? JSON.parse(cached) : []
+  } catch {
+    return []
+  }
+}
 export default createStore({
   state: {
     data: {},
@@ -17,7 +36,12 @@ export default createStore({
     isLoading: false, //2020.06.03增加路由切换时加载提示
     userInfo: null,
     appLang: {},
-    serviceList: []
+    serviceList: [],
+    //多应用(子系统)状态
+    appList: loadAppListCache(),
+    currentAppId: getSavedAppId() || DEFAULT_APP_ID,
+    //用户有权限访问的appIds(登录时返回，仅内存)
+    userAppIds: []
   },
   mutations: {
     setLocal(state, source) {
@@ -39,7 +63,26 @@ export default createStore({
     clearUserInfo(state) {
       state.permission = []
       state.userInfo = null
+      state.userAppIds = []
       localStorage.removeItem(keys.USER)
+      //注意：不清除当前应用appId，重新登录后可直接进入之前选择的应用(key按用户隔离)
+    },
+    //设置用户有权限访问的appIds(登录时)
+    setUserAppIds(state, appIds) {
+      state.userAppIds = appIds || []
+    },
+    //设置应用列表
+    setAppList(state, appList) {
+      state.appList = appList
+      localStorage.setItem(APP_LIST_KEY, JSON.stringify(appList))
+    },
+    //设置当前应用(通过appId)
+    setCurrentApp(state, appId) {
+      const id = parseInt(appId)
+      if (isValidAppId(id, state.appList)) {
+        state.currentAppId = id
+        saveAppId(id)
+      }
     },
     test(state) {
       return 113344
@@ -55,6 +98,16 @@ export default createStore({
     getServiceList: (state) => (path) => {
       return state.serviceList || []
     },
+    //获取应用列表
+    getAppList: (state) => () => state.appList,
+    //获取当前应用ID
+    getCurrentAppId: (state) => () => state.currentAppId,
+    //获取当前应用配置(完整对象)
+    getAppConfig: (state) => () => getAppById(state.currentAppId, state.appList),
+    //验证appId是否有效
+    isValidAppId: (state) => (appId) => isValidAppId(appId, state.appList),
+    //获取用户有权限访问的appIds
+    getUserAppIds: (state) => () => state.userAppIds,
     local: (state) => () => {
       return state.appLang || {}
     },
@@ -101,6 +154,24 @@ export default createStore({
   actions: {
     setPermission(context, data) {
       context.commit('setPermission', data) //调用方式 store.dispatch('push')
+    },
+    //初始化应用列表(从API获取，服务端按当前用户角色过滤)
+    async initAppList({ commit, state }) {
+      try {
+        const appList = await fetchAppList()
+        commit('setAppList', appList)
+        //验证当前appId是否有效，无效则使用默认
+        if (!isValidAppId(state.currentAppId, appList)) {
+          const defaultApp = getDefaultApp(appList)
+          if (defaultApp) {
+            commit('setCurrentApp', defaultApp.appId)
+          }
+        }
+        return appList
+      } catch (error) {
+        console.error('Failed to fetch app list:', error)
+        return []
+      }
     },
     toDo(context) {
       return context.Store.m

@@ -27,6 +27,7 @@ app.config.globalProperties.permission = permission
 
 
 app.config.globalProperties.$global = {
+  lang: true, //是否显示语言切换(登录页/顶部导航)，翻译数据在[语言设置]页面维护后点击[生成语言包]
   useIncludeCache:true,//使用include做缓存,旧版本升级的代码这里需要设置为false
   theme: 'blue', //默认布局颜色：dark、blue、red、orange、green
   layout: 'top', //菜单布局方式：classics=经典导航，top=顶部导航

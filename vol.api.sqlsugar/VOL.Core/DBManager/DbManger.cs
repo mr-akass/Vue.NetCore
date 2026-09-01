@@ -18,10 +18,8 @@ namespace VOL.Core.DbSqlSugar
         /// 获取系统库：后台异步使用
         /// </summary>
         public static SqlSugarScope SqlSugarClient = new SqlSugarScope(
-          new List<ConnectionConfig>() {
-              SqlSugarRegister.GetSysConnectionConfig()
-              //添加其他数据库链接
-          },
+          //注册默认连接与appsettings中Connections节点下的所有命名连接
+          SqlSugarRegister.GetAllConnectionConfigs(),
          db =>
          {
              db.Aop.OnLogExecuting = (sql, pars) =>
@@ -38,6 +36,32 @@ namespace VOL.Core.DbSqlSugar
         {
             //其他配置文件里面的自定义数据库链接名称
             return Db.GetConnection(configId);
+        }
+
+        /// <summary>
+        /// 根据DBServer名称(即Connections节点中的连接名/ConfigId)获取数据库连接
+        /// dbServer为空、default或未配置时返回默认连接；请求上下文不可用时使用后台静态连接
+        /// </summary>
+        /// <param name="dbServer"></param>
+        /// <returns></returns>
+        public static ISqlSugarClient GetDbClient(string dbServer = null)
+        {
+            SqlSugarScope scope;
+            try
+            {
+                scope = HttpContext.Current?.RequestServices != null ? Db : SqlSugarClient;
+            }
+            catch
+            {
+                scope = SqlSugarClient;
+            }
+            if (string.IsNullOrWhiteSpace(dbServer)
+                || string.Equals(dbServer, DBManage.DbName.Default, StringComparison.OrdinalIgnoreCase))
+            {
+                return scope;
+            }
+            //未注册的连接名回退到默认连接，兼容DBServer字段的历史数据
+            return scope.IsAnyConnection(dbServer) ? scope.GetConnection(dbServer) : scope;
         }
 
         public static SqlSugarScope Db

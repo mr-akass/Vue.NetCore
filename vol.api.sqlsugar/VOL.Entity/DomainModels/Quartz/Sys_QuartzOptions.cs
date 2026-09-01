@@ -75,6 +75,24 @@ namespace VOL.Entity.DomainModels
        public string CronExpression { get; set; }
 
        /// <summary>
+       ///执行频率中文描述(由CronExpression自动生成，列表展示用)
+       /// </summary>
+       [Display(Name ="执行频率")]
+       [MaxLength(255)]
+       [Column(TypeName="nvarchar(255)")]
+       [Editable(true)]
+       public string CronDescr { get; set; }
+
+       /// <summary>
+       ///Cron表达式副本(冗余保存)
+       /// </summary>
+       [Display(Name ="CronStr")]
+       [MaxLength(100)]
+       [Column(TypeName="nvarchar(100)")]
+       [Editable(true)]
+       public string CronStr { get; set; }
+
+       /// <summary>
        ///Url地址
        /// </summary>
        [Display(Name ="Url地址")]

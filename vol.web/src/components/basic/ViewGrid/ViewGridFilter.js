@@ -190,6 +190,14 @@ let serviceFilter = {
     //行内编辑获取默认编辑行
     return row || {};
   },
+  tableEditSaveBefore(addRows, updateRows) {
+    //行内编辑保存前方法(editTable模式)，addRows=新建的行，updateRows=修改过的行，返回false停止保存
+    return true;
+  },
+  tableEditSaveAfter(result) {
+    //行内编辑保存后方法(editTable模式)，result={success,failed,message}
+    return true;
+  },
   dicInited(dic) {
     //字典初始后方法
   },

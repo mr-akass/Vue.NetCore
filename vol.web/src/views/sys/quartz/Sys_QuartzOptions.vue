@@ -50,6 +50,7 @@
                        {field:'Method',title:'请求方式',type:'string',bind:{ key:'请求方式',data:[]},width:110,align:'left'},
                        {field:'TimeOut',title:'超时时间(秒)',type:'int',width:80,hidden:true,align:'left'},
                        {field:'CronExpression',title:'Corn表达式',type:'string',width:120,require:true,align:'left'},
+                       {field:'CronDescr',title:'执行频率',type:'string',width:140,align:'left'},
                        {field:'ApiUrl',title:'Url地址',type:'string',width:150,align:'left'},
                        {field:'PostData',title:'post参数',type:'string',width:110,hidden:true,align:'left'},
                        {field:'AuthKey',title:'AuthKey',type:'string',width:100,hidden:true,align:'left'},
