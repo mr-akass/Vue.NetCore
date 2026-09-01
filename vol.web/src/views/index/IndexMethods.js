@@ -150,6 +150,53 @@ export function registerTopNav(dataConfig) {
   }
 }
 
+/** 为了取"当前选中菜单id"塞进菜单数据里的首页项,不是真实菜单,不参与一级导航分组 */
+export const HOME_MENU_ID = '0'
+
+/**
+ * 按布局把菜单分成"一级导航栏 + 侧边菜单"两份：
+ *   classics(经典导航) —— 整棵树都在侧边栏,没有一级导航栏
+ *   top(顶部导航)/left(双栏导航) —— 一级菜单单独成一栏(顶栏链接 / 最左侧窄栏),侧边栏只放当前一级下的子树
+ * 布局在主题面板里是可以实时切换的,所以这段必须能反复执行,两个"还原"动作缺一不可：
+ *   1) 分组时把直接子菜单的 parentId 改成 0(让它在侧边栏里当根),再次分组前要用 pid 还回去,否则层级散了
+ *   2) children 一并清空交给 VolMenu 按 parentId 重拼,否则上一次分组平铺出来的孙子菜单会变成二级菜单
+ */
+export function groupMenuByLayout(dataConfig, layoutValue) {
+  const { navMenuList, menuData, navCurrentMenuId } = dataConfig
+  const all = dataConfig.menuOptions.value || []
+  navMenuList.splice(0)
+  menuData.splice(0)
+  if (!all.length) return
+  all.forEach((m) => {
+    m.parentId = m.pid
+    m.children = []
+  })
+  if (layoutValue === 'classics') {
+    menuData.push(...all)
+    return
+  }
+  navMenuList.push(...all.filter((c) => !c.pid && c.id != HOME_MENU_ID))
+  if (!navMenuList.length) {
+    //只配了单层菜单时退回经典布局的显示方式,否则一级栏和侧边栏会同时是空的
+    menuData.push(...all)
+    return
+  }
+  navMenuList.forEach((m) => {
+    const group = all.filter((c) => c.parentId == m.id)
+    group.forEach((c) => (c.parentId = 0))
+    //循环里继续往 group 里追加,顺带把三级及更深的菜单也收进来
+    for (let i = 0; i < group.length; i++) {
+      group.push(...all.filter((c) => c.parentId == group[i].id))
+    }
+    m.groupMenus = group
+  })
+  //记住的一级菜单还在就接着用它,否则回到第一个
+  let index = navMenuList.findIndex((c) => c.id === navCurrentMenuId.value)
+  if (index == -1) index = 0
+  navCurrentMenuId.value = navMenuList[index].id
+  menuData.push(...navMenuList[index].groupMenus)
+}
+
 export default async function (proxy, dataConfig, router, onSelect) {
   const store = proxy.$store
   let _userInfo = store.getters.getUserInfo()
@@ -176,61 +223,23 @@ export default async function (proxy, dataConfig, router, onSelect) {
   const currentAppId = getSavedAppId()
   const menuUrl = currentAppId ? `api/menu/getTreeMenu?appId=${currentAppId}` : 'api/menu/getTreeMenu'
   proxy.http.get(menuUrl, {}, false).then((result) => {
-    const navMenuList = dataConfig.navMenuList
-    const navCurrentMenuId = dataConfig.navCurrentMenuId
     const menuOptions = dataConfig.menuOptions
     const selectId = dataConfig.selectId
-    const menuData = dataConfig.menuData
     proxy.base.setAsyncApi(result.asyncApi)
 
     let data = result.menu
     let dataItem = data.find((x) => {
       return x.linkType == 3 && (!x.enable || x.enable == 1)
     })
-    if (dataConfig.layout.value != 'classics') {
-      navMenuList.push(
-        ...data.filter((c) => {
-          return !c.parentId
-        })
-      )
-    }
     data.push({ id: '0', name: '首页', url: '/home', icon: 'bi-house' }) // 为了获取选中id使用
 
     initQueryParams(data)
 
     store.dispatch('setPermission', data)
 
-    if (navMenuList.length) {
-
-      navMenuList.forEach((m) => {
-        m.children = data.filter((c) => {
-          return c.parentId == m.id
-        })
-        m.children.forEach((c) => {
-          c.parentId = 0
-        })
-        for (let index = 0; index < m.children.length; index++) {
-          const mItem = m.children[index]
-          let mChildrenItems = data.filter((c) => {
-            return c.parentId == mItem.id
-          })
-          m.children.push(...mChildrenItems)
-        }
-      })
-      let navMenuIndex = navMenuList.findIndex((c) => {
-        return c.id === dataConfig.navCurrentMenuId.value
-      })
-      if (navMenuIndex == -1) {
-        navCurrentMenuId.value = navMenuList[0].id
-        menuData.push(...navMenuList[0].children)
-      } else {
-        menuData.push(...navMenuList[navMenuIndex].children)
-      }
-    } else {
-      menuData.push(...data)
-    }
-   
     menuOptions.value = data
+    //一级导航与侧边菜单按当前布局分组(布局能在主题面板里实时切换,分组逻辑抽成了可反复执行的函数)
+    groupMenuByLayout(dataConfig, dataConfig.layout.value)
 
     // console.log(JSON.stringify(menuOptions.value))
 

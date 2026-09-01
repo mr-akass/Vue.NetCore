@@ -6,13 +6,18 @@ import ElementPlus from 'element-plus'
 import 'element-plus/dist/index.css'
 import './assets/element-icon/icon.css'
 import './assets/bootstrap-icons/font/bootstrap-icons.min.css'
+import './assets/css/theme-custom.less' //自定义主题(CSS变量驱动),只在启用后生效
 import base from './uitils/common'
 import VolProvider from './components/VolProvider'
 import http from './api/http'
 import translator from './uitils/translator'
 import permission from './api/permission'
 import viewgird from './components/basic/ViewGrid'
+import themeManager from './uitils/themeManager'
 import * as ElementPlusIconsVue from '@element-plus/icons-vue'
+
+//挂载前先用本地缓存把主题铺上:等接口返回再应用会闪一下默认配色
+themeManager.applyCachedTheme()
 
 const app = createApp(App)
 

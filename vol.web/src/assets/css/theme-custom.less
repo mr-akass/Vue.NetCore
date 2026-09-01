@@ -1,0 +1,410 @@
+/**
+ * 自定义主题样式（全局，非 scoped）
+ * 只在 body 带 vol-theme-active 时生效：没启用自定义主题的用户完全走框架原来的 .vol-theme-blue 那套样式
+ * 一律用 CSS 变量取色/取尺寸，变量由 uitils/themeManager.js 挂到 <html> 上
+ *
+ * 为什么必须写在这里而不是 views/index/index.less：
+ *   1) index.less 是 scoped 的，选不到渲染在 body 下的弹窗/下拉/抽屉
+ *   2) 选择器统一用 #vol-container 开头(带ID)，特异性高于 scoped 编译出来的属性选择器，
+ *      不用满屏 !important 也能盖住框架样式(个别框架样式本身带 !important 的才跟着加)
+ */
+
+/* ------------------------------ 外壳 ------------------------------ */
+body.vol-theme-active {
+  font-size: var(--vol-font-size, 14px);
+
+  #vol-container {
+    font-size: var(--vol-font-size, 14px);
+    /* 背景图与遮罩在同一个 background-image 里(见 themeManager.applyTheme) */
+    background-image: var(--vol-bg-image, none);
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+
+  #vol-container .vol-header {
+    height: var(--vol-header-height, 61px);
+    background: var(--vol-header-bg, #fff);
+    color: var(--vol-header-text, #303133);
+    border-bottom: 1px solid var(--vol-border, #e9ecf2);
+  }
+
+  #vol-container .vol-aside {
+    background: var(--vol-sider-bg, #001529);
+    border-right: 1px solid var(--vol-sider-border, rgba(255, 255, 255, 0.06));
+  }
+
+  #vol-container .vol-aside .header,
+  #vol-container .vol-aside .vol-menu {
+    background: transparent;
+    border-right: 0;
+  }
+
+  /* 顶栏高度是可调的,菜单区高度跟着算,否则底部会被撑出滚动条 */
+  #vol-container .vol-aside .vol-menu {
+    height: calc(100vh - var(--vol-header-height, 61px));
+  }
+
+  #vol-container .vol-aside .header {
+    height: var(--vol-header-height, 61px);
+    line-height: var(--vol-header-height, 61px);
+    color: var(--vol-sider-text, #c3cede);
+  }
+
+  #vol-container .vol-aside .vol-aside-project-name {
+    color: var(--vol-sider-text, #c3cede);
+    font-size: calc(var(--vol-font-size, 14px) + 2px);
+  }
+
+  #vol-container .vol-main {
+    background: var(--vol-main-bg, #f5f7fa);
+    border-left: 1px solid var(--vol-border, #e9ecf2);
+  }
+
+  /* ---------------------------- 侧边菜单 ---------------------------- */
+  #vol-container .vol-aside .el-menu,
+  #vol-container .vol-aside .el-sub-menu,
+  #vol-container .vol-aside .el-sub-menu__title,
+  #vol-container .vol-aside .el-menu-item {
+    background: transparent;
+    color: var(--vol-sider-text, #c3cede);
+    border-right: 0;
+  }
+
+  #vol-container .vol-aside .el-sub-menu__title *,
+  #vol-container .vol-aside .el-menu-item * {
+    color: inherit;
+  }
+
+  #vol-container .vol-aside .el-menu-item,
+  #vol-container .vol-aside .el-sub-menu__title {
+    height: var(--vol-menu-height, 48px);
+    line-height: var(--vol-menu-height, 48px);
+    font-size: var(--vol-font-size, 14px);
+  }
+
+  /* 框架的展开态/子项底色带 !important(aside.less),这里必须跟着加才能盖住 */
+  #vol-container .vol-aside .el-sub-menu.is-opened,
+  #vol-container .vol-aside .el-sub-menu.is-opened .vol-el-menu-item {
+    background: transparent !important;
+  }
+
+  #vol-container .vol-aside .el-menu-item:hover,
+  #vol-container .vol-aside .el-sub-menu__title:hover {
+    background: var(--vol-sider-hover-bg, rgba(255, 255, 255, 0.08));
+  }
+
+  #vol-container .vol-aside .el-menu-item.is-active {
+    background: var(--vol-sider-active-bg, #2d8cf0);
+    color: var(--vol-sider-active-text, #fff);
+  }
+
+  #vol-container .vol-aside .el-menu-item.is-active::after {
+    background: var(--vol-sider-active-bg, #2d8cf0);
+  }
+
+  /* 折叠态弹出的子菜单渲染在 body 下(选不到 #vol-container),单独给一份配色 */
+  .el-menu--popup {
+    background: var(--vol-sider-bg, #001529);
+
+    .el-menu-item,
+    .el-sub-menu__title {
+      color: var(--vol-sider-text, #c3cede);
+      background: transparent;
+      font-size: var(--vol-font-size, 14px);
+    }
+
+    .el-menu-item:hover,
+    .el-sub-menu__title:hover {
+      background: var(--vol-sider-hover-bg, rgba(255, 255, 255, 0.08));
+    }
+
+    .el-menu-item.is-active {
+      background: var(--vol-sider-active-bg, #2d8cf0);
+      color: var(--vol-sider-active-text, #fff);
+    }
+  }
+
+  /* ------------------------ 双栏布局的一级菜单窄栏 ------------------------ */
+  /* 框架的 .vol-menu-side-left 配色是按 .vol-theme-xx-aside 一套一套写死的(aside.less),
+     自定义主题的类名不在那些名单里,这里按变量补一份 */
+  #vol-container .vol-menu-side-left {
+    width: var(--vol-rail-width, 80px);
+    background: var(--vol-sider-bg, #001529);
+    border-right: 1px solid var(--vol-sider-border, rgba(255, 255, 255, 0.06));
+  }
+
+  #vol-container .vol-menu-side-left-collapse {
+    height: var(--vol-header-height, 61px);
+    line-height: var(--vol-header-height, 61px);
+  }
+
+  #vol-container .vol-menu-side-left .collapse-menu {
+    color: var(--vol-sider-text, #c3cede);
+    line-height: inherit;
+  }
+
+  #vol-container .vol-menu-side-left-item {
+    color: var(--vol-sider-text, #c3cede);
+    border-radius: var(--vol-radius-card, 8px);
+
+    p {
+      font-size: calc(var(--vol-font-size, 14px) - 1px);
+    }
+  }
+
+  #vol-container .vol-menu-side-left-item:hover {
+    background: var(--vol-sider-hover-bg, rgba(255, 255, 255, 0.08));
+  }
+
+  #vol-container .vol-menu-side-left-item-acitve,
+  #vol-container .vol-menu-side-left-item-acitve:hover {
+    background: var(--vol-sider-active-bg, #2d8cf0);
+    color: var(--vol-sider-active-text, #fff);
+  }
+
+  /* ---------------------------- 顶栏 ---------------------------- */
+  #vol-container .vol-header .header-text,
+  #vol-container .vol-header .header-info,
+  #vol-container .vol-header .user-name,
+  #vol-container .vol-header .index-date {
+    color: var(--vol-header-text, #303133);
+  }
+
+  #vol-container .vol-header .h-link a {
+    color: var(--vol-header-text, #303133);
+    font-size: var(--vol-font-size, 14px);
+    border-radius: var(--el-border-radius-base, 6px);
+  }
+
+  #vol-container .vol-header .h-link a:hover {
+    color: var(--vol-primary, #2d8cf0) !important;
+    background: var(--vol-primary-hover, rgba(45, 140, 240, 0.08));
+  }
+
+  #vol-container .vol-header .h-link a.h-link-a-acitve,
+  #vol-container .vol-header .h-link a.h-link-a-acitve:hover {
+    color: var(--vol-primary, #2d8cf0) !important;
+    background: var(--vol-primary-soft, rgba(45, 140, 240, 0.12));
+    font-weight: 500;
+  }
+
+  #vol-container .vol-header .el-icon,
+  #vol-container .vol-header .h-link-icons a {
+    color: inherit;
+  }
+
+  /* ---------------------------- 页签导航 ---------------------------- */
+  #vol-container .header-navigation {
+    height: var(--vol-tab-height, 36px);
+    line-height: var(--vol-tab-height, 36px);
+    border-bottom: 1px solid var(--vol-border, #e9ecf2);
+  }
+
+  #vol-container .header-navigation .el-tabs__nav {
+    height: var(--vol-tab-height, 36px) !important;
+  }
+
+  #vol-container .header-navigation .el-tabs__header {
+    background: var(--vol-surface, #fff);
+    border-top: 1px solid var(--vol-border, #e9ecf2);
+    border-bottom: 1px solid var(--vol-border, #e9ecf2);
+  }
+
+  #vol-container .header-navigation .el-tabs__item {
+    height: var(--vol-tab-height, 36px);
+    line-height: var(--vol-tab-height, 36px);
+    font-size: var(--vol-font-size, 14px);
+    color: var(--vol-header-text, #525252) !important;
+    background: transparent;
+    border: 0;
+  }
+
+  #vol-container .header-navigation .el-tabs__item.is-top:hover {
+    background: var(--vol-primary-hover, rgba(45, 140, 240, 0.08));
+  }
+
+  #vol-container .header-navigation .el-tabs__item.is-active {
+    background: var(--vol-primary-soft, rgba(45, 140, 240, 0.12));
+    color: var(--vol-primary, #2d8cf0) !important;
+  }
+}
+
+/* 页签三种排版:分隔线(card)/下划线(line)/胶囊(pill) */
+body.vol-theme-active.vol-nav-line {
+  #vol-container .header-navigation .el-tabs__item.is-active {
+    background: transparent;
+    box-shadow: inset 0 -2px 0 0 var(--vol-primary, #2d8cf0);
+  }
+}
+
+body.vol-theme-active.vol-nav-pill {
+  #vol-container .header-navigation .el-tabs__item {
+    margin: 0 3px;
+    border-radius: var(--el-border-radius-round, 999px);
+  }
+
+  #vol-container .header-navigation .el-tabs__item.is-top:before {
+    width: 0;
+  }
+}
+
+/* ------------------------------ 全局字号 ------------------------------ */
+/* 弹窗/下拉渲染在 body 下,所以这些规则不能挂在 #vol-container 里 */
+body.vol-theme-active {
+  .el-table,
+  .el-table th.el-table__cell,
+  .el-table td.el-table__cell,
+  .el-form-item__label,
+  .el-input__inner,
+  .el-textarea__inner,
+  .el-tabs__item,
+  .el-dropdown-menu__item,
+  .el-select-dropdown__item,
+  .el-checkbox__label,
+  .el-radio__label,
+  .el-tag,
+  .el-pagination,
+  .el-message-box__content,
+  .el-dialog__title {
+    font-size: var(--vol-font-size, 14px);
+  }
+
+  /* index.html 里有一条 .el-button{font-size:12px!important},不加 !important 按钮字号跟不上 */
+  .el-button {
+    font-size: var(--vol-font-size, 14px) !important;
+  }
+
+  /* 主题面板自己不跟着放大:抽屉宽度固定,字号调到 20px 时按钮会被挤出可视区 */
+  .vol-theme-setting .el-button {
+    font-size: 12px !important;
+  }
+
+  /* 排版密度:表格行高与表单间距 */
+  .el-table td.el-table__cell,
+  .el-table th.el-table__cell {
+    padding: var(--vol-cell-padding-y, 8px) 0;
+  }
+
+  .el-form-item {
+    margin-bottom: var(--vol-gap, 12px);
+  }
+}
+
+/* ------------------------------ 内容区排版 ------------------------------ */
+/* 卡片化:主内容区留白并把里面的白底块变成带圆角阴影的卡片 */
+body.vol-theme-active.vol-page-card {
+  #vol-container .vol-main .el-scrollbar__view > div {
+    background: var(--vol-surface, #fff);
+    border-radius: var(--vol-radius-card, 8px);
+    box-shadow: 0 2px 12px rgba(31, 45, 61, 0.06);
+    padding: var(--vol-gap, 12px);
+    margin: var(--vol-gap, 12px);
+  }
+}
+
+/* ------------------------------ 半透明(玻璃效果 或 有背景图) ------------------------------ */
+/* 通透度滑块只改 --vol-surface 一个变量,凡是会挡住背景图的白底块都从它取色。
+   为什么不做成玻璃效果专属:背景图配平面/渐变效果时,外壳与内容区仍是实色,
+   图片只能从缝隙里露一点,那不是"整个页面铺满背景图" */
+body.vol-theme-active.vol-translucent {
+  #vol-container .header-navigation .el-tabs__header {
+    background: var(--vol-surface, rgba(255, 255, 255, 0.86));
+  }
+
+  /* 内容区的白底块:ViewGrid 那几层是写死的 background:white(ViewGrid.less),
+     不接管的话列表页就是一整块白板。第一条(滚动区的直接子元素)兜住所有自定义页面的最外层 */
+  #vol-container .vol-main .el-scrollbar__view > div,
+  #vol-container .vol-main .view-container,
+  #vol-container .vol-main .view-header,
+  #vol-container .vol-main .grid-container,
+  #vol-container .vol-main .grid-body,
+  #vol-container .vol-main .fiexd-search-box,
+  #vol-container .vol-main .vol-edit-content > div.item,
+  #vol-container .vol-main .home-container .home-shortcut,
+  #vol-container .vol-main .home-container .p-card,
+  #vol-container .vol-main .home-container .home-list-chart,
+  #vol-container .vol-main .home-container .list-item .content,
+  #vol-container .vol-main .home-container .table {
+    background-color: var(--vol-surface, rgba(255, 255, 255, 0.86));
+  }
+
+  /* 弹窗/抽屉/卡片/下拉在 body 下渲染(选不到 #vol-container),单独一份 */
+  .el-dialog,
+  .el-drawer,
+  .el-card,
+  .el-message-box,
+  .el-popper.is-light,
+  .el-select-dropdown,
+  .el-dropdown__popper {
+    background: var(--vol-surface, rgba(255, 255, 255, 0.86)) !important;
+  }
+
+  /* 表格:Element-Plus 把 --el-table-* 定义在 .el-table 元素自己身上,所以只能在这里按选择器覆盖
+     (写到 <html> 上会被就近的定义盖掉)。表头另外还要 !important——VolTable.less 里是
+     background-color:#f8f8f9!important,否则表头会是整页唯一一块死白 */
+  .el-table {
+    --el-table-bg-color: transparent;
+    --el-table-tr-bg-color: transparent;
+    --el-table-expanded-cell-bg-color: transparent;
+    --el-table-header-bg-color: var(--vol-surface, rgba(255, 255, 255, 0.86));
+  }
+
+  #vol-container .el-table__header-wrapper th.el-table__cell,
+  #vol-container .el-table__header th,
+  #vol-container .el-table__fixed-header-wrapper th {
+    background-color: var(--el-table-header-bg-color, rgba(255, 255, 255, 0.86)) !important;
+  }
+
+  /* 斑马纹本来是浅灰实色,半透明下要跟着透一点,否则隔行看着像没铺到背景 */
+  #vol-container .el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+    background: rgba(255, 255, 255, 0.35);
+  }
+
+  /* 主题面板自己不跟着透明:通透度调到 20% 时面板文字也看不清了,用户就没法把它调回来(和字号那条排除同理) */
+  .el-drawer.vol-theme-drawer {
+    background: #ffffff !important;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* ------------------------------ 玻璃效果 ------------------------------ */
+/* 半透明部分已由 .vol-translucent 统一处理,这里只剩玻璃独有的背景模糊
+   (背景图+平面效果时用户要的是看清图片,不能糊掉;大面积 backdrop-filter 也很吃性能) */
+body.vol-theme-active.vol-effect-glass {
+  #vol-container .vol-header,
+  #vol-container .vol-aside,
+  #vol-container .vol-menu-side-left,
+  #vol-container .header-navigation .el-tabs__header,
+  .el-dialog,
+  .el-drawer,
+  .el-card,
+  .el-message-box,
+  .el-popper.is-light,
+  .el-select-dropdown,
+  .el-dropdown__popper {
+    backdrop-filter: var(--vol-surface-blur, blur(14px));
+    -webkit-backdrop-filter: var(--vol-surface-blur, blur(14px));
+  }
+}
+
+/* ------------------------------ 渐变效果 ------------------------------ */
+/* 顶栏/侧边的渐变值在 themeManager 里算好(用主色与预设色混合),这里只补按钮的渐变 */
+body.vol-theme-active.vol-effect-gradient {
+  .el-button--primary {
+    background-image: linear-gradient(135deg, var(--el-color-primary-light-3) 0%, var(--vol-primary) 100%);
+    border-color: transparent;
+  }
+}
+
+/* ------------------------------ 有背景图时 ------------------------------ */
+/* 主内容区必须透明,否则背景图只能在侧边和顶栏的缝隙里露一点 */
+body.vol-theme-active.vol-has-bg {
+  #vol-container .vol-main,
+  #vol-container .vol-main .el-scrollbar__view,
+  #vol-container .vol-main .el-scrollbar__wrap {
+    background: transparent;
+  }
+}

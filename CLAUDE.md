@@ -12,7 +12,7 @@ EF 版 `vol.api/` 已于 2026-08-10 整体删除，套官方升级包时必须�
 | `vol.api.sqlsugar/` | 后端解决方案 `VOL.sln`（VOL.Core 框架层 / VOL.Entity / VOL.Sys 业务 / VOL.Builder 代码生成器 / VOL.WebApi 启动项） |
 | `vol.web/` | 前端 Vue3 + Vite + Element Plus |
 | `DB/sqlserver/` | 数据库升级脚本（每个自研功能一个，均幂等） |
-| `进度报告.md` | 功能开发进度（按时间顺序 1~16 节，每节含改动文件清单 + E2E 验证记录；本文件是精简索引，细节看它） |
+| `进度报告.md` | 功能开发进度（按时间顺序 1~22 节，每节含改动文件清单 + E2E 验证记录；本文件是精简索引，细节看它） |
 | `环境配置使用说明.md` | 多环境配置与启动方式 |
 
 - 后端 9991 端口，前端 9990 端口，数据库 SQL Server（开发库 `vol_v3`）
@@ -47,6 +47,17 @@ in 查询遇 `yyyy-MM-dd`（10 位）值时按天区间匹配（`LambdaExtension
 `appsettings.{Development,Staging,Production}.json` 按 `ASPNETCORE_ENVIRONMENT` 覆盖基础配置；
 `launchSettings.json` 有 `VOL.WebApi.{环境}` 三个 profile。
 日志：`VOL.Core/Utilities/CustomConsole.cs`、`LogHelper.cs`、`Enums/NlogLoggerType.cs`。
+
+**全解决方案唯一的日志写法（硬性约定）**：`CustomConsole.WriteLine(NlogLoggerType.X, "msg")`——
+一次调用同时落盘 `Logs/{类别}/yyyy-MM-dd.txt` 并输出控制台，一举两得（内部 `LogHelper` → NLog，
+用法是 log4 那种风格）。新增 `NlogLoggerType` 枚举值**必须同步在 `VOL.WebApi/Config/Log/nlog.config`
+加 target + rule**，否则只有控制台没有文件。目前 `CustomConsole` 只有 Info 级，错误落盘用
+`LogHelper.Error(NlogLoggerType.Error.ToString(), msg)`。
+- **`Sys_Log`（日志写数据库）已弃用，不要再往里写**：每个请求一条入库开销太大（`Logger.cs` 的队列 +
+  每秒 `BulkCopy`，还要跨库双提交），换来的信息文件日志一样能给。官方原有的 `Logger.Info/OK/Error` 调用点
+  （`ApiBaseController`、`ActionPermissionFilter` 等）暂时留着不动，但**新代码一律用 `CustomConsole`**。
+  顺带一个事实：`Sys_Log.ElapsedTime` 列从来没被赋值过——算它的 `DequeueToTable` 是死代码，
+  写库走的是 `Fastest<Sys_Log>().BulkCopy(list)`，所以库里这列全是 NULL，别拿它做耗时分析。
 
 ### 3. 多数据库连接（2026-07-31，实体级路由 2026-08-21 补完）
 `appsettings.json` 的 `Connections` 节点，节点名 = SqlSugar ConfigId = 字典/代码生成器/实体特性 `DBServer` 的值。
@@ -245,6 +256,72 @@ U+00A0 不换行空格、全角空格、零宽空格、换行，`Microsoft.Data.
   `options.js` 里有没有 `quickCopy:true`。
 - 未接线：`VolTable/VolTable-V2-Render.jsx`（虚拟表格的另一套渲染器，全仓库无人 import，启用时再补）。
 
+### 18. 主题个性化（2026-09-01，对应报告第 21 节；背景图铺满/折叠重叠修复见报告第 23 节）
+用户在 [基础设置] 抽屉里自选背景图 / 主题色 / 玻璃或渐变效果 / 排版布局 / 全局字号，
+**每一项都按 `(UserId, AppId)` 分别保存**（切应用会整页刷新，刷新后读到的就是新应用那份）。
+- 表 `Sys_ThemeSetting`（`UX_Sys_ThemeSetting_User_App(UserId,AppId)`）：旋钮全塞在 `ThemeJson` 一列
+  （后端只校验长度 8000 + 能否 `JObject.Parse` + 背景图地址合法，**不认识具体旋钮**，前端加开关后端不用动）；
+  `BgImage` 另存一列是为了换图/删图时能直接查出旧路径。`UserId=0` 的行 = **该应用的默认主题**
+  （超管点 [设为本应用默认] 写入，用户没配过时前端拿它渲染）；`AppId=0` = 不区分应用。
+  表名已加进 `EntityDbRouter._frameworkTables`。
+- 后端 `VOL.Sys/Services/System/Partial/Sys_ThemeSettingService.cs` +
+  `VOL.WebApi/Controllers/Sys/Partial/Sys_ThemeSettingController.cs`（6 个接口，**只有 JWT、不加
+  `[ApiActionPermission]`**，个人数据类接口的既有约定，所以不用在菜单里建权限记录）。
+  背景图落 `wwwroot/Upload/theme/{userId}/{guid}{ext}`，5MB、限图片扩展名；
+  **删文件前必须查"有没有别的记录还引用这个地址"**——超管的个人记录和应用默认记录可能指同一张图，
+  不查就会一点重置把全应用的默认背景删掉。
+- 前端核心 `vol.web/src/uitils/themeManager.js`：所有旋钮翻译成挂在 `<html>` 上的 CSS 变量
+  （含 Element-Plus 的 `--el-color-primary` 及 `light-1..9`/`dark-2`、`--el-font-size-*`、`--el-border-radius-*`
+  等，外壳自己的用 `--vol-*`）+ 打在 **`body`** 上的标记类。样式表 `assets/css/theme-custom.less`（**全局非 scoped**）。
+  面板 `views/index/Setting.vue`（改任意项立刻预览，[保存] 才落库，直接关抽屉在 `onUnmounted` 里还原）。
+- **为什么标记类打在 `body` 上、选择器以 `#vol-container` 开头**：弹窗/下拉/抽屉渲染在 body 下，
+  挂容器上选不到它们；带 ID 的选择器特异性高于 scoped 编译出的属性选择器，不用满屏 `!important`。
+  框架原来的 `.vol-theme-blue/-dark/...` 一行没动，没启用自定义主题的用户完全走原来那套。
+- `applyTheme` 会把 `vol-layout` 和 `vol-theme`(`custom`/`custom-aside`) 写回 localStorage，
+  让 `Index.vue` 原有的启动读取逻辑不用改；`main.js` 在 `createApp` **之前**先 `applyCachedTheme()` 铺一遍
+  （否则先闪默认蓝再跳自定义色）。`applyCachedTheme` 里**必须清理残留的 custom 标记**：
+  换用户/换应用后可能类名还在但变量没了 → 外壳变成没样式的白板。
+- **坑**：`vol.web/index.html` 里有条全局 `.el-button{font-size:12px!important}`，
+  "全局字号"对按钮无效就是它——`theme-custom.less` 里 `.el-button` 那条必须跟着加 `!important`，
+  同时把面板自己排除掉（`.vol-theme-setting .el-button` 固定 12px，抽屉宽度固定，20px 时按钮会被挤出可视区）。
+- 和代码生成器的开关相反：**主题旋钮全是运行时读取**，改完刷新即生效，不用重新生成任何页面。
+- **背景图铺满整页 + 界面通透度（报告第 23 节）**：背景图画在 `#vol-container` 上，所以"图能露多少"
+  取决于压在它上面的外壳与内容区是否半透明 → `applyTheme` 里 **`translucent = 玻璃效果 || 有背景图`**，
+  两种情况共用一个 body 标记类 `vol-translucent`（样式里不用把条件写两遍），透明度就是[界面通透度]滑块
+  （`surfaceAlpha`，范围放宽到 **0.1~1**）算出的唯一变量 `--vol-surface`，凡是会挡住背景的白底块都从它取色。
+  滑块因此不再是玻璃专属，`Setting.vue` 里 `v-show="effect==='glass' || bgImage"`。
+  **`backdrop-filter` 仍只给玻璃效果**：背景图配平面效果时用户要的是看清图，糊掉就没意义（大面积模糊也很吃性能）。
+  渐变效果下 `--vol-sider-bg`/`--vol-header-bg` 是把每个色标换成带透明度的版本，保住渐变外观。
+  新加的白底块（业务页面自己写死的 `background:#fff`）记得改成 `var(--vol-surface, #fff)`，否则那块在背景图下是死白。
+  **主题面板自己排除在半透明外**（`.el-drawer.vol-theme-drawer` 实色 + 取消模糊，`Index.vue` 上加的类）：
+  通透度调到 20% 时面板文字也看不清，用户就没法把它调回来（和字号那条排除同理）。
+- **坑（都在报告第 23 节）**：① Element-Plus 把 `--el-table-bg-color`/`--el-table-tr-bg-color`/`--el-table-header-bg-color`
+  等**定义在 `.el-table` 元素自己身上**，挂 `<html>` 会被就近定义盖掉（表现是"变量明明设了表头还是白的"），
+  只能在 `theme-custom.less` 里按 `.el-table` 选择器给；② 表头另外还要 `!important`——`VolTable.less` 是
+  `background-color:#f8f8f9!important`；③ 侧边栏折叠成 63px 后项目名会换行成好几行，而 `.header` 只有 60px 高
+  又不裁剪 → 文字压到下面的菜单图标上（极光玻璃这类小字号主题能叠三四行），折叠态直接 `display:none`
+  （`Index.vue` 新增的 `vol-aside-collapse` 类 + `aside.less`）。
+- 已知限制：字号 18~20px 时表格工具栏在 1500px 宽下会挤（框架 ViewGrid 布局，没为此改框架）；
+  登录页/Guide 页不套用主题。`Sys_Application.Theme`/`PrimaryColor` 是框架历史遗留列，本功能没用它们。
+  （`layout='left'` 原来没有双栏 DOM、只是换配色，已由功能 19 补完。）
+
+### 19. 双栏导航布局（2026-09-01，对应报告第 22 节）
+最左侧一条窄栏只放一级菜单，点哪个，右边侧边栏就换成它下面的子菜单树。布局值仍是主题里的 `left`
+（不新增第四种，已保存的主题和"深色沉浸"方案自动获得真双栏），纯前端改动、无数据库变更。
+- 分组逻辑收口在 `vol.web/src/views/index/IndexMethods.js → groupMenuByLayout(dataConfig, layout)`
+  （初始化和 `Index.vue` 里 `watch(layout)` 的实时切换都调它）；窄栏 DOM + `asideTitle` 计算属性
+  （双栏时侧边栏顶部显示当前一级菜单名）在 `views/Index.vue`；结构样式 `views/index/aside.less`；
+  自定义主题下的配色/宽度 `assets/css/theme-custom.less`（`--vol-rail-width`，密度 68/80/92）。
+- **分组会改写菜单数据，所以这个函数必须可重复执行**：它把一级菜单的直接子菜单 `parentId` 置 0
+  （让 `VolMenu` 当根渲染），原始父级在 `d.pid`。每次开头要做两件还原——① 从 `pid` 还原 `parentId`；
+  ② 清掉 `children`。漏掉②的表现是切回经典布局后**孙子菜单被渲染成二级菜单**（层级散了）。
+  每组的菜单列表存在自己加的 `m.groupMenus` 里，**不能借用 `m.children`**（那是 `VolMenu` 建树用的）。
+- 窄栏图标要写兜底 `item.icon || 'el-icon-menu'`：`VolElementMenu` 补默认图标是在 setup 里跑一次的，窄栏不经过它。
+- `.vol-aside-project-name` 全局是 `color:#fff`，而框架原生 `-aside` 主题（`blue-aside`/`dark-aside`）的**侧边栏是白底**
+  （深色只给窄栏）→ 双栏下标题白字白底看不见，`aside.less` 的 `.vol-layout-left` 块里改成深色；
+  自定义主题那份在 `theme-custom.less` 里以 `#vol-container` 开头（ID 特异性更高）不受影响。
+- 折叠按钮折的是右边侧边栏，**窄栏本身不折**（框架原行为，窄栏只有 80px）。
+
 ## 关键技术坑（踩过，别再踩）
 
 **SqlSugar**
@@ -278,7 +355,17 @@ U+00A0 不换行空格、全角空格、零宽空格、换行，`Microsoft.Data.
 - VolForm 的 `readonly` 渲染成 `disabled`；想"新增可填、编辑只读"在 editFormOptions 写 `readonlyUpdate: true`
   （`VolProvider.setFormAddOrUpdateReadonly` 在 `modelOpenAfter` 之前统一处理），不要在 jsx 里手改 option。
 - ViewGrid 扩展按钮格式是 `buttons:{view:[...]}`（对象不是数组），`onClick` 的 `this` = ViewGrid 实例。
-- el-dialog 挂在 body 下渲染，弹窗框架样式必须写在**非 scoped** 全局块里。
+- el-dialog 挂在 body 下渲染，弹窗框架样式必须写在**非 scoped** 全局块里。想按主题/开关整体换样式，
+  标记类要打在 `body` 上（打在 `#vol-container` 上选不到弹窗/下拉/抽屉），选择器则以 `#vol-container` 开头
+  提高特异性，避免满屏 `!important`。
+- **`vol.web/index.html` 里有一批带 `!important` 的全局内联样式**（如 `.el-button{font-size:12px!important}`）：
+  改全局字号/尺寸时发现"别的都变了只有按钮不变"就是它。排查手法是遍历 `document.styleSheets`
+  找出所有命中该元素的规则，别猜。
+- **不是所有 `--el-*` 变量都能挂在 `<html>` 上生效**：Element-Plus 把表格那几个（`--el-table-bg-color`/
+  `--el-table-tr-bg-color`/`--el-table-header-bg-color`/`--el-table-expanded-cell-bg-color`）**定义在 `.el-table`
+  元素自己身上**，就近定义优先 → 挂 `<html>` 一点效果都没有（还会误以为已生效），必须按 `.el-table` 选择器覆盖。
+  改这类颜色时先在 devtools 里看变量是从哪一层解析来的。表格表头还额外被 `VolTable.less` 的
+  `background-color:#f8f8f9!important` 压着，覆盖要跟着加 `!important`。
 - 界面选行必须点行首单选框，直接点行/单元格不算选中（会提示"请选择要编辑的行"）。
 - 代码生成器**新增一个列级开关**要改五处才看得见效果：实体属性 → `builderData.jsx` 列 →
   `coderV2Table.vue` 的 `TAB_VISIBLE_FIELDS`（漏了这处最容易懵：数据保存正常、界面上没有这一列）→
@@ -286,6 +373,9 @@ U+00A0 不换行空格、全角空格、零宽空格、换行，`Microsoft.Data.
 - 想给单元格值**后面**追加图标：字典列和自定义 `formatter` 列的值渲染在块级 `<div>` 里，图标会掉到下一行，
   要给列加标记类再把内部 div 设 `display:inline`（见功能 17）。改显示效果时优先在**只读模板链尾部追加**，
   别覆盖 `column.render`——那会把 `bind`/`link`/日期等分支一起冲掉。
+- **`store.state.permission` 里的菜单 `parentId` 是被布局改写过的**：双栏/顶部布局分组时会把一级菜单的
+  直接子菜单 `parentId` 置 0，原始父级留在 `pid`（`groupMenuByLayout`，见功能 19）。要判断层级/找父菜单用 `pid`；
+  任何会重跑的分组逻辑都必须先从 `pid` 还原 `parentId` 并清 `children`，否则切布局后层级会散。
 
 **中文编码**
 - sqlcmd 执行含中文的脚本会乱码 → 用 SSMS，或另存 UTF-16 后再 sqlcmd，或 `-f 65001`；中文路径/文件名先复制到 ASCII 临时路径。
@@ -321,6 +411,8 @@ U+00A0 不换行空格、全角空格、零宽空格、换行，`Microsoft.Data.
 - 新功能一律加 `DB/sqlserver/升级脚本_{YYYYMMDD}_{功能名}.sql`，必须幂等（`IF NOT EXISTS` / `IF OBJECT_ID IS NULL`）；
   纯代码改动（无表结构变化）不加脚本，但要在报告里写明"无数据库变更"。
 - 用户的个人数据类接口沿用快捷导航的套路：只存业务主键，展示信息从已有权限数据补；不加 `[ApiActionPermission]`。
+- **记日志只用 `CustomConsole.WriteLine(NlogLoggerType.X, msg)`**（控制台 + 落盘二合一，见功能 2）；
+  不要新增写 `Sys_Log` 的代码，也不要再设计"日志入库"类功能——数据库写日志开销太大，已决定弃用。
 - 注释用中文，写"为什么"而不是"做了什么"，与现有代码的注释密度保持一致。
 - 为验证临时改的配置/实体特性（如给实体加 `DBServer`、往 `Connections` 加连接），验证完必须还原并复测一遍，
   在报告里记下还原状态。

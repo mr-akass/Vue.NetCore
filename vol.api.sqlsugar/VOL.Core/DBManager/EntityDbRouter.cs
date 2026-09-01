@@ -114,6 +114,7 @@ namespace VOL.Core.DBManager
             "Sys_UserRole", "Sys_UserShortcut", "Sys_Dictionary", "Sys_DictionaryList", "vSys_Dictionary",
             "Sys_Log", "Sys_Message", "Sys_MessageUser", "Sys_Language", "Sys_Application",
             "Sys_ConfigSetting", "Sys_DbConnection", "Sys_TableInfo", "Sys_TableColumn",
+            "Sys_ThemeSetting",
             "Sys_QuartzOptions", "Sys_QuartzLog",
             "Sys_WorkFlow", "Sys_WorkFlowStep", "Sys_WorkFlowTable", "Sys_WorkFlowTableStep",
             "Sys_WorkFlowTableAuditLog"

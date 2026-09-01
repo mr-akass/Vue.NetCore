@@ -2,10 +2,25 @@
   <vol-loading v-if="!permissionInited" center></vol-loading>
   <div id="vol-container" :class="['vol-theme-' + theme, layoutIsLeft() ? 'vol-layout-left' : '']"
     v-if="permissionInited">
-    <div class="vol-aside" :style="{ width: (isCollapse ? 63 : 200) + 'px' }">
+    <!-- 双栏布局:一级菜单单独一条窄栏,点哪个,右边的侧边栏就换成它下面的子菜单 -->
+    <div class="vol-menu-side-left" v-if="layoutIsLeft()">
+      <div class="vol-menu-side-left-collapse" @click="toggleLeft">
+        <i class="collapse-menu" :class="isCollapse ? 'el-icon-s-unfold' : 'el-icon-s-fold'"></i>
+      </div>
+      <el-scrollbar style="height: 0; flex: 1">
+        <div v-for="(item, index) in navMenuList" :key="'rail-' + item.id"
+          :class="[navCurrentMenuId === item.id ? 'vol-menu-side-left-item-acitve' : '']"
+          class="vol-menu-side-left-item" :title="$ts(item.name)" @click="menuDataClick(item, index)">
+          <i :class="item.icon || 'el-icon-menu'"></i>
+          <p>{{ $ts(item.name) }}</p>
+        </div>
+      </el-scrollbar>
+    </div>
+    <div class="vol-aside" :class="{ 'vol-aside-collapse': isCollapse }"
+      :style="{ width: isCollapse ? '63px' : 'var(--vol-sider-width, 200px)' }">
       <div class="header">
         <div class="vol-aside-project-name">
-          .Net8 Vol开发框架
+          {{ asideTitle }}
         </div>
         <!-- 这里可以改为logo显示 -->
         <!-- <img  src="@/assets/imgs/logo.png" /> -->
@@ -149,8 +164,9 @@
         </el-scrollbar>
       </div>
     </div>
-    <el-drawer :title="$ts('基础设置')" size="360px" v-model="drawer_model" direction="rtl" destroy-on-close>
-      <home-setting @layoutChange="layoutChange"></home-setting>
+    <el-drawer :title="$ts('基础设置')" class="vol-theme-drawer" size="360px" v-model="drawer_model" direction="rtl"
+      destroy-on-close>
+      <home-setting></home-setting>
     </el-drawer>
   </div>
 </template>
@@ -167,8 +183,9 @@ import IndexDataConfig from './index/IndexDataConfig.js'
 import IndexTabs from './index/IndexTabs.js'
 import HomeSetting from './index/Setting.vue'
 import lang from '@/components/lang/lang'
-import inintMenu, { registerTopNav } from './index/IndexMethods.js'
+import inintMenu, { registerTopNav, groupMenuByLayout } from './index/IndexMethods.js'
 import IndexRouterView from './index/IndexRouterView'
+import themeManager, { themeState, CUSTOM_THEME_NAME } from '@/uitils/themeManager'
 
 import { reactive, ref, watch, onMounted, onUnmounted, getCurrentInstance, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
@@ -261,6 +278,11 @@ const icons = computed(() => {
 
 const color = ref('')
 const getColor = () => {
+  //自定义主题的顶栏底色是变量算出来的,文字色也跟着变量走,不再按布局猜黑白
+  if (themeState.custom) {
+    color.value = 'var(--vol-header-text, #303133)'
+    return
+  }
   color.value = layoutIsLeft() || theme.value == 'dark' ? '#000' : '#ffff'
 }
 
@@ -349,7 +371,7 @@ const menuDataClick = (mItem, index) => {
   navCurrentMenuId.value = navMenuList[index].id
   localStorage.setItem(navKey, navCurrentMenuId.value)
   menuData.splice(0)
-  menuData.push(...navMenuList[index].children)
+  menuData.push(...(navMenuList[index].groupMenus || []))
 }
 const { getNavTopIndex, navOverflowHasActive, mountTopNav, unmountTopNav } =
   registerTopNav(dataConfig);
@@ -358,14 +380,23 @@ layout.value = localStorage.getItem('vol-layout')
 if (!layout.value) {
   layout.value = proxy.$global.layout || 'top'
 }
-const layoutChange = (layoutValue, themeValue) => {
-  layout.value = layoutValue
-  theme.value = themeValue
-  getColor()
-}
 const layoutIsLeft = () => {
   return layout.value == 'left'
 }
+//双栏布局下侧边栏顶部显示当前一级菜单名(项目名已经在最左侧那条窄栏里了),其它布局保持原来的项目名
+const asideTitle = computed(() => {
+  if (!layoutIsLeft()) return '.Net8 Vol开发框架'
+  const item = navMenuList.find((x) => x.id === navCurrentMenuId.value)
+  return item ? proxy.$ts(item.name) : ''
+})
+//布局能在主题面板里实时切换:一级菜单与侧边菜单要按新布局重新分组,否则双栏的一级栏是空的
+watch(
+  () => layout.value,
+  (newVal, oldVal) => {
+    if (!oldVal || newVal === oldVal || !permissionInited.value) return
+    groupMenuByLayout(dataConfig, newVal)
+  }
+)
 theme.value = localStorage.getItem('vol-theme')
 if (!theme.value) {
   if (layoutIsLeft()) {
@@ -375,7 +406,29 @@ if (!theme.value) {
   }
 }
 
+//自定义主题:面板里改布局/折叠是实时预览的,这里跟着 themeState 走,不用面板 emit 事件
+if (themeState.custom) {
+  isCollapse.value = themeState.menuCollapsed
+}
+watch(
+  () => [themeState.layout, themeState.custom, themeState.menuCollapsed],
+  ([newLayout, custom, collapsed]) => {
+    if (custom) {
+      layout.value = newLayout
+      theme.value = newLayout == 'left' ? `${CUSTOM_THEME_NAME}-aside` : CUSTOM_THEME_NAME
+      isCollapse.value = collapsed
+    } else {
+      //重置成框架原生主题:回到 main.js 里配的默认布局
+      layout.value = proxy.$global.layout || 'top'
+      theme.value = layout.value == 'left' ? proxy.$global.theme + '-aside' : proxy.$global.theme
+    }
+    getColor()
+  }
+)
+
 getColor()
+//登录后按"当前用户+当前应用"拉主题:缓存已在 main.js 里同步铺过一遍,这里是拿服务端的覆盖(换机器/别处改过)
+themeManager.loadTheme()
 inintMenu(proxy, dataConfig, router, onSelect)
 
 Object.assign(proxy.$tabs, { open: open, close: close })
