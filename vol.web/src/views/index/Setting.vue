@@ -129,7 +129,15 @@
     </div>
 
     <div class="ts-footer">
+      <!-- 三个"还原"很容易被当成同一个,这里一句话把区别写清楚:只有[重置]是不可逆的 -->
+      <div class="ts-footer-hint">
+        {{ $ts('恢复默认=回到内置默认值（点【保存】才落库）；恢复上次=丢弃本次未保存的修改；重置=删除我的配置并回到框架原生主题') }}
+      </div>
       <el-button type="primary" size="small" :loading="saving" @click="save">{{ $ts('保存') }}</el-button>
+      <el-button size="small" :loading="restoring" :disabled="!canRestore" @click="restoreSaved">
+        {{ $ts('恢复上次') }}
+      </el-button>
+      <el-button size="small" @click="restoreDefault">{{ $ts('恢复默认') }}</el-button>
       <el-button size="small" @click="reset">{{ $ts('重置') }}</el-button>
       <el-button v-if="isSuperAdmin" size="small" type="warning" plain @click="saveDefault">
         {{ $ts('设为本应用默认') }}
@@ -148,11 +156,15 @@ export default defineComponent({
     const presets = COLOR_PRESETS
     const schemes = THEME_SCHEMES
     const saving = ref(false)
+    const restoring = ref(false)
     const fileRef = ref()
     let saved = false //关闭面板时:没保存过就把预览还原回来
 
     //打开面板时的状态:已启用自定义主题就接着改,否则用默认值(布局沿用当前实际布局,避免一进来界面就跳)
-    const origin = themeState.custom ? themeManager.normalizeTheme(themeState) : null
+    //不是 const:[恢复上次] 重新从服务端拉过之后,"关闭面板要还原到哪一份"也跟着变了
+    let origin = themeState.custom ? themeManager.normalizeTheme(themeState) : null
+    //有没有"上次"可恢复:进面板时已启用自定义主题(服务端有我的配置或应用默认),或者本次点过保存
+    const canRestore = ref(!!origin)
     const theme = reactive(
       themeManager.normalizeTheme(
         origin || Object.assign({}, DEFAULT_THEME, { layout: localStorage.getItem('vol-layout') || proxy.$global.layout || 'top' })
@@ -214,7 +226,7 @@ export default defineComponent({
       })
     }
 
-    /* ---------------------------- 保存/重置 ---------------------------- */
+    /* ---------------------------- 保存/恢复/重置 ---------------------------- */
     const save = () => {
       saving.value = true
       themeManager
@@ -222,11 +234,51 @@ export default defineComponent({
         .then((x) => {
           if (x.status) {
             saved = true
+            canRestore.value = true //存过了,[恢复上次]从这里开始有东西可恢复
             proxy.$message.success(proxy.$ts('保存成功'))
           }
         })
         .finally(() => {
           saving.value = false
+        })
+    }
+    /**
+     * 恢复默认:只把面板里的旋钮改回内置默认值(DEFAULT_THEME)并实时预览,不请求服务端
+     * 不做二次确认是因为它完全可逆——点[恢复上次]就能把服务端那份原样拿回来;
+     * 背景图也一起清掉(默认值就是没有背景图),但文件还在服务器上,只有点了[保存]才会跟着删(与[清除]一致)
+     */
+    const restoreDefault = () => {
+      Object.assign(theme, themeManager.normalizeTheme(DEFAULT_THEME))
+      apply()
+      proxy.$message.success(proxy.$ts('已恢复默认配置，点【保存】后才会生效'))
+    }
+    /**
+     * 恢复上次:丢弃本次未保存的修改,回到上次保存的那份
+     * 重新从服务端拉而不是用打开面板时的内存快照——背景图是"点上传就落库"的,
+     * 用旧快照会把 bgImage 指回已经被删掉的旧图文件
+     */
+    const restoreSaved = () => {
+      restoring.value = true
+      themeManager
+        .loadTheme(appId)
+        .then((t) => {
+          //undefined=请求失败(loadTheme 不抛错),不能当成"服务端没有配置"把面板清成默认值
+          if (t === undefined) {
+            return proxy.$message.error(proxy.$ts('取上次保存的配置失败'))
+          }
+          if (t) {
+            Object.assign(theme, t) //loadTheme 内部已经 applyTheme 过,这里只同步面板
+            origin = t
+            return proxy.$message.success(proxy.$ts('已恢复上次保存的配置'))
+          }
+          //服务端确实没有配置:loadTheme 已经撤掉全部变量(界面回到框架原生),面板跟着回默认值
+          Object.assign(theme, themeManager.normalizeTheme(DEFAULT_THEME))
+          origin = null
+          canRestore.value = false
+          proxy.$message.info(proxy.$ts('还没有保存过配置，已回到系统默认'))
+        })
+        .finally(() => {
+          restoring.value = false
         })
     }
     const saveDefault = () => {
@@ -268,6 +320,8 @@ export default defineComponent({
       schemes,
       theme,
       saving,
+      restoring,
+      canRestore,
       fileRef,
       appName,
       isSuperAdmin,
@@ -281,6 +335,8 @@ export default defineComponent({
       clearBackground,
       save,
       saveDefault,
+      restoreDefault,
+      restoreSaved,
       reset
     }
   }
@@ -449,9 +505,28 @@ export default defineComponent({
   }
 
   .ts-footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
     padding-top: 6px;
     text-align: right;
     border-top: 1px solid #ebeef5;
+
+    /* 抽屉固定 360px 宽,五个按钮必然要换行:间距统一交给 gap,同时去掉 element-plus
+       给相邻按钮加的 margin-left(不去掉的话换行后每行第一个按钮也带 12px 缩进,右侧对不齐) */
+    :deep(.el-button + .el-button) {
+      margin-left: 0;
+    }
+  }
+
+  .ts-footer-hint {
+    flex-basis: 100%; /* 占满一行,让按钮从下一行开始排 */
+    margin-bottom: 4px;
+    font-size: 12px;
+    line-height: 1.6;
+    text-align: left;
+    color: #909399;
   }
 
   :deep(.el-radio-button__inner) {

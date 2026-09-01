@@ -360,6 +360,8 @@ export function applyCachedTheme() {
 /**
  * 从服务端拉当前应用的主题并应用:我的 > 应用默认 > 不启用自定义主题
  * 服务端两条数据一次返回,少一次请求
+ * 返回值:主题对象 | null(服务端确实没有配置) | undefined(请求失败)——
+ * 面板的[恢复上次]要靠这个区别决定是"清成默认值"还是"提示失败、什么都别动"
  */
 export function loadTheme(appId) {
   const id = appId == null ? currentAppId() : appId
@@ -383,8 +385,9 @@ export function loadTheme(appId) {
     })
     .catch(() => {
       //拉不到就用缓存,主题不是关键路径,不要因此报错打扰用户
+      //这里必须返回 undefined 而不是 null:调用方要能把"请求失败"和"服务端没有配置"分开处理
       themeState.inited = true
-      return null
+      return undefined
     })
 }
 
