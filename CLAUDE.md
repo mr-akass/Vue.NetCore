@@ -256,7 +256,7 @@ U+00A0 不换行空格、全角空格、零宽空格、换行，`Microsoft.Data.
   `options.js` 里有没有 `quickCopy:true`。
 - 未接线：`VolTable/VolTable-V2-Render.jsx`（虚拟表格的另一套渲染器，全仓库无人 import，启用时再补）。
 
-### 18. 主题个性化（2026-09-01，对应报告第 21 节；背景图铺满/折叠重叠修复见报告第 23 节）
+### 18. 主题个性化（2026-09-01，对应报告第 21 节；背景图铺满/折叠重叠修复见报告第 23 节，圆角横条修复见第 24 节，搜索条/工具栏叠色修复见第 26 节）
 用户在 [基础设置] 抽屉里自选背景图 / 主题色 / 玻璃或渐变效果 / 排版布局 / 全局字号，
 **每一项都按 `(UserId, AppId)` 分别保存**（切应用会整页刷新，刷新后读到的就是新应用那份）。
 - 表 `Sys_ThemeSetting`（`UX_Sys_ThemeSetting_User_App(UserId,AppId)`）：旋钮全塞在 `ThemeJson` 一列
@@ -301,6 +301,19 @@ U+00A0 不换行空格、全角空格、零宽空格、换行，`Microsoft.Data.
   `background-color:#f8f8f9!important`；③ 侧边栏折叠成 63px 后项目名会换行成好几行，而 `.header` 只有 60px 高
   又不裁剪 → 文字压到下面的菜单图标上（极光玻璃这类小字号主题能叠三四行），折叠态直接 `display:none`
   （`Index.vue` 新增的 `vol-aside-collapse` 类 + `aside.less`）。
+- **坑（报告第 24 节）**：卡片化/半透明那两条规则**不能通配 `#vol-container .vol-main .el-scrollbar__view > div`**——
+  Vue3 页面组件的根是 fragment，`ViewGrid` 里的 `VolBox`(`.vol-dialog`)和 `el-dialog` 遮罩(`.el-overlay`)
+  与页面主体是**兄弟节点**、同为该滚动区的直接子 div，通配会把这些空壳子也画成卡片，
+  表现是"列表页下方多出几条 24px 高的圆角横条，页面里有几个弹窗就有几条"（用户管理 3 个 VolBox → 3 条）。
+  现在写成 `> div:not(.vol-dialog):not(.el-overlay)`。**不能改用 `:first-child`**：个人中心的页面根元素排在第三个；
+  也不能按根元素类名白名单列举：代码生成页(`/builder`)的根 div 根本没有 class。
+- **坑（报告第 26 节）**：半透明那串选择器**只能刷框架自己上了白底的那一层**。`ViewGrid` 普通布局里
+  只有 `.view-container` 是白底，`.view-header`/`.grid-container`/`.grid-body`/`.fiexd-search-box` 本来透明——
+  一起刷就是半透明叠半透明（0.4 叠 0.4=0.64），表现是"搜索条和工具栏像两条更白的横带、内容贴着横带上沿"
+  （框架这几层只有 `padding-bottom` 没有 `padding-top`），而且通透度滑块与所见不符。
+  现在内层四个选择器加了 `.layout-container-padding` 前缀（只有间距布局才是内层白底、外层 `none`），
+  并且 `…> div:not(.vol-dialog):not(.el-overlay) > .view-container` 置透明（父级已刷过就不再叠，
+  但 ViewGrid 嵌在更深层级时仍保留自己的底色）。
 - 已知限制：字号 18~20px 时表格工具栏在 1500px 宽下会挤（框架 ViewGrid 布局，没为此改框架）；
   登录页/Guide 页不套用主题。`Sys_Application.Theme`/`PrimaryColor` 是框架历史遗留列，本功能没用它们。
   （`layout='left'` 原来没有双栏 DOM、只是换配色，已由功能 19 补完。）
@@ -366,6 +379,28 @@ U+00A0 不换行空格、全角空格、零宽空格、换行，`Microsoft.Data.
   元素自己身上**，就近定义优先 → 挂 `<html>` 一点效果都没有（还会误以为已生效），必须按 `.el-table` 选择器覆盖。
   改这类颜色时先在 devtools 里看变量是从哪一层解析来的。表格表头还额外被 `VolTable.less` 的
   `background-color:#f8f8f9!important` 压着，覆盖要跟着加 `!important`。
+- **别用 `> div` 通配"页面最外层"**：Vue3 页面组件的根是 fragment，页面主体与 `VolBox`(`.vol-dialog`)、
+  `el-dialog` 遮罩(`.el-overlay`)是**兄弟节点**，都是 `.vol-main .el-scrollbar__view` 的直接子 div。
+  给这层加底色/圆角/内边距会把弹窗空壳子也画出来（底部多出几条圆角横条，见功能 18 与报告第 24 节）。
+  排查手法：devtools 里看 `el-scrollbar__view` 的直接子元素有几个、各自多高。
+- **分页栏的间距是框架自己补的，且补漏了**（报告第 25 节）：`VolTable.vue` 的 `<el-pagination>` **没开 `background`**，
+  而 Element-Plus 只在 `is-background` 模式下给页码/上下页 `margin:0 4px`，非该模式下
+  `--el-pagination-item-gap:16px` 只作用于 `.btn-prev`/`__sizes`/`__total`/`__jump` → `.el-pager li` 与 `.btn-next` 零 margin。
+  框架在 `VolTable.less` 只给 `.el-pager .number` 补了 `margin-left:8px`，漏了 `.btn-next` 和快速翻页的
+  `…`（class 是 `.more.btn-quicknext` 不带 `.number`），表现是"页码之间有缝、`›` 和 `…` 紧贴着页码"。
+  白底压白底时看不出来，自定义主题把按钮变成半透明底色后才暴露——**这类"主题一开就发现的样式问题"先摘掉 body
+  标记类量一遍**，margin 不变就说明是框架原有缺陷，改框架样式而不是往主题里打补丁。
+- **`vol.web/src/assets/css/common.less` 是死文件**：全仓库没有任何地方 import 它
+  （只有同名的 `uitils/common.js` 被引，同名不同物）。里面 `.el-pager li{margin-right:9px;border:1px solid #eee}`
+  这类样式看着像生效其实一行都没生效，排查界面问题时别拿它当依据。
+- **半透明底色只能画一层**（报告第 26 节）：给某一层加 `--vol-surface` 前先确认**框架有没有给它上白底**——
+  父子都刷就是 `0.4` 叠 `0.4=0.64`，表现是"搜索条/工具栏比周围亮一截，像两条更白的横带"，
+  且通透度滑块与所见不符（设 20% 看着像 36%）。`ViewGrid` **普通布局只有 `.view-container` 是白底**，
+  内层 `.view-header`/`.grid-*`/`.fiexd-search-box` 本来透明；间距布局（`$global.gridPadding`/页面传 `padding`）
+  反过来是内层 `#fff`、外层 `background:none`。顺带一个通用事实：框架这几层大多**只有 `padding-bottom`、
+  没有 `padding-top`**（`.view-header` 是 `0 15px 8px`），白底压白底时看不出，一旦有了可见底色
+  就会显出"内容贴着上沿"——**这时别去补 `padding-top`**（`.view-header` 是 `height:40px` + `border-box`，
+  按钮 32px 已吃满，加内边距会被裁），先去掉多余的那层底色。
 - 界面选行必须点行首单选框，直接点行/单元格不算选中（会提示"请选择要编辑的行"）。
 - 代码生成器**新增一个列级开关**要改五处才看得见效果：实体属性 → `builderData.jsx` 列 →
   `coderV2Table.vue` 的 `TAB_VISIBLE_FIELDS`（漏了这处最容易懵：数据保存正常、界面上没有这一列）→

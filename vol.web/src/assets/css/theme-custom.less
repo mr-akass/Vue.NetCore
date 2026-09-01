@@ -293,9 +293,13 @@ body.vol-theme-active {
 }
 
 /* ------------------------------ 内容区排版 ------------------------------ */
-/* 卡片化:主内容区留白并把里面的白底块变成带圆角阴影的卡片 */
+/* 卡片化:主内容区留白并把里面的白底块变成带圆角阴影的卡片
+   排除 .vol-dialog/.el-overlay:页面组件的根是 fragment,ViewGrid 里的 VolBox(.vol-dialog)与
+   el-dialog 的遮罩和页面根元素是**兄弟节点**,一样是 el-scrollbar__view 的直接子 div。
+   通配 `> div` 会把这些空壳子也画成卡片,里面没内容只剩 padding → 页面底部多出一条 24px 高的圆角横条,
+   页面里有几个弹窗就有几条(用户管理有三个 VolBox 就是三条) */
 body.vol-theme-active.vol-page-card {
-  #vol-container .vol-main .el-scrollbar__view > div {
+  #vol-container .vol-main .el-scrollbar__view > div:not(.vol-dialog):not(.el-overlay) {
     background: var(--vol-surface, #fff);
     border-radius: var(--vol-radius-card, 8px);
     box-shadow: 0 2px 12px rgba(31, 45, 61, 0.06);
@@ -313,14 +317,19 @@ body.vol-theme-active.vol-translucent {
     background: var(--vol-surface, rgba(255, 255, 255, 0.86));
   }
 
-  /* 内容区的白底块:ViewGrid 那几层是写死的 background:white(ViewGrid.less),
-     不接管的话列表页就是一整块白板。第一条(滚动区的直接子元素)兜住所有自定义页面的最外层 */
-  #vol-container .vol-main .el-scrollbar__view > div,
+  /* 内容区的白底块:ViewGrid 那几层里**只接管框架自己画了白底的**,否则就是"半透明叠半透明"
+     (0.4 叠 0.4 = 0.64)——搜索条和工具栏会比周围亮一截,像两条更白的横带压在卡片顶部,
+     而框架给这两层的 padding-top 都是 0(只有 padding-bottom),内容紧贴带子上沿,看着就是"上间距没了"。
+     普通布局里框架只给 `.view-container` 上了白底,`.view-header`/`.grid-*`/`.fiexd-search-box` 本来是透明的;
+     只有 `$global.gridPadding`/`padding` 的间距布局才反过来:外层置 `background:none`、内层刷成 `#fff`。
+     第一条(滚动区的直接子元素)兜住所有自定义页面的最外层,
+     同样要排除 .vol-dialog/.el-overlay 这些和页面根元素同级的弹窗壳子(见下方卡片化那段的说明) */
+  #vol-container .vol-main .el-scrollbar__view > div:not(.vol-dialog):not(.el-overlay),
   #vol-container .vol-main .view-container,
-  #vol-container .vol-main .view-header,
-  #vol-container .vol-main .grid-container,
-  #vol-container .vol-main .grid-body,
-  #vol-container .vol-main .fiexd-search-box,
+  #vol-container .vol-main .layout-container-padding .view-header,
+  #vol-container .vol-main .layout-container-padding .grid-container,
+  #vol-container .vol-main .layout-container-padding .grid-body,
+  #vol-container .vol-main .layout-container-padding .fiexd-search-box,
   #vol-container .vol-main .vol-edit-content > div.item,
   #vol-container .vol-main .home-container .home-shortcut,
   #vol-container .vol-main .home-container .p-card,
@@ -328,6 +337,21 @@ body.vol-theme-active.vol-translucent {
   #vol-container .vol-main .home-container .list-item .content,
   #vol-container .vol-main .home-container .table {
     background-color: var(--vol-surface, rgba(255, 255, 255, 0.86));
+  }
+
+  /* 间距布局:白底在内层,外层这两处要跟着透明——`.layout-container-padding` 自己那层
+     还写死了 `#f3f7fb` 沟槽底色,不置透明会把背景图整块挡住 */
+  #vol-container .vol-main .layout-container-padding,
+  #vol-container .vol-main .layout-container-padding .view-container {
+    background-color: transparent;
+  }
+
+  /* 上面第一条已经把页面最外层(ViewGrid 的 .layout-container)刷成半透明了,
+     紧贴在它里面的 .view-container 再刷一层就是 0.4 叠 0.4=0.64:列表页比首页/弹窗白一截,
+     通透度滑块也就不准了(拖到 20%,列表页看着还有 36%)。
+     这里只对"父级正好是被刷过的那层"生效,ViewGrid 嵌在更深层级的页面仍保留自己的底色 */
+  #vol-container .vol-main .el-scrollbar__view > div:not(.vol-dialog):not(.el-overlay) > .view-container {
+    background-color: transparent;
   }
 
   /* 弹窗/抽屉/卡片/下拉在 body 下渲染(选不到 #vol-container),单独一份 */

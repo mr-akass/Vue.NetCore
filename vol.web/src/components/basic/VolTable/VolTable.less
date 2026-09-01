@@ -33,6 +33,14 @@
   height: 25px;
   font-size: 13px;
 }
+/* element-plus 只在 is-background 模式下给页码/上下页 margin(本表格没开这个模式),
+   非 background 模式下 --el-pagination-item-gap 只作用于 btn-prev/条数/跳页,
+   而上面那条框架样式又只给 .number 加了 margin-left → 页码之间有缝,`>` 和快速翻页的 `...` 却紧贴着页码。
+   这里补齐这两处:值取 8px 与页码之间的间距一致 */
+.vol-table ::v-deep(.el-pager li),
+.vol-table ::v-deep(.el-pagination button.btn-next) {
+  margin-left: 8px;
+}
 .vol-table ::v-deep(.el-pager .number.active) {
   background: #ed4014;
   color: #fff;
